@@ -10,10 +10,12 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/codemonkey2k5/BudgetMaster9000/releases/latest"><img alt="Download" src="https://img.shields.io/github/v/release/codemonkey2k5/BudgetMaster9000?label=download&color=4f46e5"></a>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue">
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-lightgrey">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-lightgrey">
   <img alt="Privacy" src="https://img.shields.io/badge/telemetry-none-success">
-  <img alt="Offline" src="https://img.shields.io/badge/offline-first-indigo">
+  <img alt="Offline" src="https://img.shields.io/badge/offline--first-indigo">
+  <img alt="Stars" src="https://img.shields.io/github/stars/codemonkey2k5/BudgetMaster9000?style=social">
 </p>
 
 ---
@@ -39,17 +41,19 @@ Built for people who like a simple plan, a monthly ritual, and data that never l
 
 ## Get started
 
-1. Download the latest Windows release from [Releases](../../releases).
+1. **[Download the latest release](https://github.com/codemonkey2k5/BudgetMaster9000/releases/latest)** for Windows.
 2. Choose **one** of these — no extra software to install, no files to copy around:
 
 | Download | What to do |
 |----------|------------|
-| **Installer** (`.exe` setup or `.msi`) | Run it. Follow the prompts. Open Budget Master 9000 from the Start menu or desktop. |
-| **Portable** (single `.exe`) | Save it anywhere (Desktop, USB drive, folder). Double‑click it. |
+| **Installer** (setup `.exe` or `.msi`) | Run it. Follow the prompts. Open Budget Master 9000 from the Start menu or desktop. |
+| **Portable** (`BudgetMaster9000.exe`) | Save it anywhere (Desktop, USB drive, folder). Double‑click it. |
 
 That’s it. On first launch the app creates your local database for you, then offers **Start blank**, **Load demo**, or **Import** a backup.
 
 There is nothing else to download, no accounts to create, and no setup scripts.
+
+> **Windows only (x64).** Works on modern Windows 10 and Windows 11.
 
 ---
 
