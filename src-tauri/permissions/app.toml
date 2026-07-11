@@ -1,0 +1,33 @@
+[[permission]]
+identifier = "allow-all-app"
+description = "Allows all Budget Master 9000 application IPC commands"
+commands.allow = [
+  "get_status",
+  "unlock",
+  "lock_app",
+  "set_app_lock",
+  "set_theme",
+  "get_income",
+  "save_income",
+  "list_categories",
+  "add_category",
+  "upsert_category",
+  "delete_category",
+  "dismiss_category_review",
+  "clear_all_data",
+  "list_budget_lines",
+  "upsert_budget_line",
+  "delete_budget_line",
+  "get_dashboard",
+  "save_actuals",
+  "update_month_meta",
+  "complete_check_in",
+  "list_history",
+  "reopen_month",
+  "resync_month",
+  "import_legacy_json",
+  "export_json",
+  "load_demo_data",
+  "current_month",
+  "report_ui_selftest"
+]
