@@ -36,16 +36,32 @@ pub struct DbState {
     pub unlocked: Mutex<bool>,
 }
 
+/// Resolve where the SQLite database lives.
+///
+/// * **Portable** (just the `.exe` on a USB drive, Desktop, etc.): database is
+///   created next to the executable on first run. No marker files, no extra setup.
+/// * **Installed** (NSIS/MSI): database lives under the user AppData folder so
+///   upgrades never require copying data files by hand.
 pub fn resolve_db_path() -> (PathBuf, bool) {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let portable = dir.join("bm9000.portable").exists() || dir.join("portable.txt").exists();
-            if portable {
-                return (dir.join("bm9000.db"), true);
-            }
-            // Prefer next to exe if writable and a db already exists there (dev/portable soft)
             let beside = dir.join("bm9000.db");
-            if beside.exists() {
+
+            // Older portable zips used a marker; still honor it.
+            let marker =
+                dir.join("bm9000.portable").exists() || dir.join("portable.txt").exists();
+
+            // NSIS places uninstall.exe beside the main binary. Program Files
+            // installs are always treated as installed.
+            let dir_s = dir.to_string_lossy();
+            let looks_installed = dir.join("uninstall.exe").exists()
+                || dir_s.contains("Program Files")
+                || dir_s.contains("Program Files (x86)");
+
+            // Portable: single exe, no installer layout — keep the database next to it.
+            // Also stick with beside-exe if a db or marker is already there.
+            let use_portable = marker || beside.exists() || !looks_installed;
+            if use_portable && can_write_dir(dir) {
                 return (beside, true);
             }
         }
@@ -56,6 +72,22 @@ pub fn resolve_db_path() -> (PathBuf, bool) {
         .join("BudgetMaster9000");
     let _ = std::fs::create_dir_all(&base);
     (base.join("bm9000.db"), false)
+}
+
+fn can_write_dir(dir: &Path) -> bool {
+    let probe = dir.join(".bm9000_write_probe");
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&probe)
+    {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
 }
 
 pub fn open_db(path: &Path) -> Result<Connection, DbError> {
@@ -1454,7 +1486,7 @@ mod tests {
             "precondition: month starts at $0"
         );
 
-        let sample = include_str!("../../samples/legacy-user-data.json");
+        let sample = include_str!("../fixtures/legacy-user-data.json");
         let data: LegacyImport = serde_json::from_str(sample).expect("parse legacy sample");
         import_legacy(&conn, &data).unwrap();
 
@@ -1503,7 +1535,7 @@ mod tests {
     #[test]
     fn import_legacy_sample_json() {
         let (conn, path) = temp_db();
-        let sample = include_str!("../../samples/demo-budget.json");
+        let sample = include_str!("../fixtures/demo-budget.json");
         // demo-budget uses camelCase income fields matching LegacyImport
         let data: LegacyImport = serde_json::from_str(sample).expect("parse sample");
         let msg = import_legacy(&conn, &data).unwrap();

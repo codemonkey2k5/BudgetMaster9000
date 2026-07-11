@@ -1,21 +1,9 @@
 # Changelog
 
-## 1.0.0 — 2026-07-10
+## 1.0.0
 
-### New
-
-- Desktop app (Tauri) with single Windows executable / installers
-- SQLite database auto-created on first run (AppData or portable next to exe)
-- Month-centric dashboard: income, budgeted, actual, variance, remaining
-- Budget plan editor with edit/delete, fixed vs flexible lines
-- Monthly Check-In wizard with grade scorecard, wins, and attention items
-- History of closed months with reopen
-- Import legacy `data.json` from the HTML prototype
-- JSON export backup
-- Optional App Lock (Argon2id passphrase)
-- Dark / light themes
-- Demo data and sample imports
-
-### Legacy
-
-- Original HTML + PowerShell prototype preserved under `legacy/`
+- Windows desktop app with installer and portable single-file download
+- Local SQLite database created automatically on first run
+- Month-centric dashboard, Plan vs Actual, Monthly Check-In scorecard
+- History of closed months, import/export backups, optional App Lock
+- Built-in Help, Fixed vs Flexible categories, demo data option

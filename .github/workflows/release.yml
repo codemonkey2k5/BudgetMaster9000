@@ -35,7 +35,17 @@ jobs:
           releaseBody: |
             Offline monthly budget app — private, local, freeware (MIT).
 
-            **Portable tip:** place `bm9000.portable` next to the `.exe` to keep the database on a USB drive.
+            **Installer:** run the setup (or MSI). Open the app from the Start menu when it finishes.
+
+            **Portable:** download `BudgetMaster9000.exe`, double-click it. Your database is created next to it on first run. Nothing else to install or copy.
           releaseDraft: true
           prerelease: false
           args: --bundles nsis,msi
+
+      - name: Attach portable single-file exe
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Copy-Item "src-tauri/target/release/budget-master-9000.exe" "BudgetMaster9000.exe" -Force
+          gh release upload "${{ github.ref_name }}" "BudgetMaster9000.exe" --clobber

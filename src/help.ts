@@ -116,7 +116,7 @@ export const HELP_SECTIONS: HelpSection[] = [
 <p><strong>Privacy first</strong></p>
 <p>Budget Master 9000 is built to keep money data on your machine. There is no account sign-in, no cloud sync, and no advertising trackers in the app. Your numbers are not sent to a server for analysis.</p>
 <p><strong>Where data lives</strong></p>
-<p>All budget information is stored in a local database file on this computer (or next to the app in portable mode). If someone can copy that file and open the app without App Lock, they can see your data.</p>
+<p>All budget information is stored in a local database file on this computer. If you use the portable download, that file is created next to the app automatically. If someone can copy that file and open the app without App Lock, they can see your data.</p>
 <p><strong>App Lock</strong></p>
 <p>Optional App Lock asks for a passphrase when you open the app. It is meant to stop casual snooping on a shared PC (family, office). It is not the same as bank-level security. Choose a strong passphrase you will remember. There is no password reset by email. If you forget it, you need a backup you exported earlier, or you may lose access to locked data.</p>
 <p><strong>What App Lock does not replace</strong></p>
