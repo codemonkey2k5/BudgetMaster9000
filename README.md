@@ -31,11 +31,11 @@ You get a calm desktop app that answers the only questions that matter:
 - What did I *actually* spend?
 - Where did I do well, and where should I tighten up?
 
-Built for people who like a simple plan, a monthly ritual, and data that never leaves their PC.
+Built for people who like a simple plan, spending logged as it happens, and data that never leaves their PC.
 
-![Dashboard: monthly health, income, budget, charts](docs/screenshots/01-dashboard.png)
+![Dashboard: month command center](docs/screenshots/01-dashboard.png)
 
-*See this month at a glance: income, budgeted totals, actuals, and high-contrast spending charts.*
+*See the month at a glance: income, budget, actuals, charts, pace, and what needs attention.*
 
 ---
 
@@ -46,8 +46,9 @@ Built for people who like a simple plan, a monthly ritual, and data that never l
 
 | Download | New install | Upgrade |
 |----------|-------------|---------|
-| **Installer** (setup `.exe` or `.msi`) | Run it. Open from Start menu or desktop. | Download the new setup and run it again. Your budget stays in AppData automatically. |
-| **Portable** (`BudgetMaster9000.exe`) | Save it anywhere. Double‑click it. | Download the new `.exe` and **replace** the old one in the **same folder**. Your `bm9000.db` next to it is left alone. |
+| **Installer** (setup `.exe` or `.msi`) | Run it. Open from Start menu or desktop. | Run the new setup. Your budget stays in AppData automatically. |
+| **Portable** (`BudgetMaster9000.exe`) | Save it anywhere. Double‑click it. | Replace the `.exe` in the **same folder**. Leave `bm9000.db` alone. |
+| **Windows zip** | Unpack, then use the installer or portable file inside. | Same as above; includes short upgrade notes. |
 
 That’s it. No copying databases, no editing config files, no setup scripts.
 
@@ -61,54 +62,60 @@ On first launch the app creates your local database, then offers **Start blank**
 
 | | |
 |---|---|
-| **Month-first dashboard** | Command center: KPIs, charts, pace, runway, and attention reports. |
-| **Transactions** | Log spending anytime: add to totals, Multi-Entry, edit/delete month lines. |
-| **Plan vs Actual** | Recurring plan is your template. Each month is a snapshot you can still update while open. |
-| **Close-Month** | Verify numbers when you are ready, then close with a letter grade and tips. Fixed bills auto-fill. |
-| **Fixed vs Flexible categories** | Mark housing and subscriptions Fixed. Mark food and fun Flexible. |
+| **Dashboard** | Month command center: KPIs, charts, pace, cash runway, and attention reports. |
+| **Transactions** | Log spending anytime. Pick a line, enter an amount, submit — totals stack as you go. |
+| **Plan** | Recurring budget template. Open months update automatically when you change the Plan. |
+| **Close-Month** | When you are ready, verify numbers and lock the month with a letter grade and tips. |
+| **Fixed vs Flexible** | Fixed bills stay on plan; flexible items are what you track through the month. |
 | **History** | Closed months keep their grades. Reopen only when you need to fix something. |
-| **Import / export** | Bring in an older backup, or export a full backup anytime. |
+| **Import / export** | Full backups anytime. |
 | **Optional App Lock** | Passphrase gate for shared computers. |
-| **Portable** | One file. Run it. Your database appears next to it automatically. |
-| **Built-in Help** | Searchable guides written for humans, not accountants. |
+| **Portable or installed** | One portable file, or a normal installer — your choice. |
+| **Built-in Help** | Searchable guides written for first-time users. |
 
 ---
 
 ## Screenshots
 
-### Dashboard: this month’s story
+### Dashboard: the month command center
 
 ![Dashboard overview](docs/screenshots/01-dashboard.png)
 
-Net income, budgeted total, actuals, variance, remaining cash, and charts with high-contrast slices so categories stay easy to tell apart.
+Income, budgeted totals, actuals, remaining cash, high-contrast charts, pace, and what needs attention.
+
+### Transactions: log spending as it happens
+
+![Transactions](docs/screenshots/02-transactions.png)
+
+Choose a budget line, enter what you spent, and submit. Edit or delete entries for the open month.
 
 ### Plan: set it once, reuse every month
 
-![Plan editor](docs/screenshots/02-plan.png)
+![Plan editor](docs/screenshots/03-plan.png)
 
-Add recurring lines (weekly, monthly, or yearly). Categories own Fixed vs Flexible so the whole plan stays consistent.
+Recurring lines (weekly, monthly, or yearly). Categories are Fixed or Flexible so the plan stays consistent.
 
-### Check-In: close the month with a real scorecard
+### Close-Month: verify, then lock it in
 
-![Monthly Check-In](docs/screenshots/03-checkin.png)
+![Close-Month](docs/screenshots/04-close-month.png)
 
-Step-by-step: confirm income, enter flexible spending, review totals, finish. Fixed bills are already treated as on plan.
+A short walkthrough: confirm income, review flexible spending, finish with a grade and plain-language tips.
 
 ### History: grades you can understand
 
-![History of months](docs/screenshots/04-history.png)
+![History of months](docs/screenshots/05-history.png)
 
-Browse past months, jump to any month on the Dashboard, or reopen a closed month when you need to correct numbers (then run Check-In again).
+Browse past months, open any month on the Dashboard, or reopen a closed month to correct numbers.
 
 ### Help: answers in plain language
 
-![In-app Help](docs/screenshots/05-help.png)
+![In-app Help](docs/screenshots/06-help.png)
 
-Search topics like Fixed vs Flexible, Plan vs Dashboard, grades, import, and security.
+Search topics like transactions, plan, grades, backups, install/upgrade, and privacy.
 
 ### Settings: income, lock, backup, and a safe reset
 
-![Settings](docs/screenshots/06-settings.png)
+![Settings](docs/screenshots/07-settings.png)
 
 Net monthly income drives the math. Optional App Lock. Export backups. Clear data only if you type `DELETE DATA`.
 
@@ -116,13 +123,13 @@ Net monthly income drives the math. Optional App Lock. Export backups. Clear dat
 
 ## How a typical month looks
 
-1. **Plan** once (or import a backup).
-2. Live the month — log spending on **Transactions** anytime (or Multi-Entry by category).
-3. Open **Close-Month** when ready, verify totals, finish.
-4. Read the grade and the “needs attention” list on the Dashboard / scorecard.
-5. Adjust next month’s Plan if something consistently overruns.
+1. Build your **Plan** (or import a backup) and set net income under **Settings**.
+2. Live the month — record spending on **Transactions** whenever it happens.
+3. Check progress on the **Dashboard**.
+4. When you are ready, open **Close-Month**, verify totals, and finish.
+5. Use the grade and “needs attention” notes to adjust next month’s Plan if something keeps overrunning.
 
-Fixed bills (rent, insurance, streaming) fill themselves so they do not show as “not entered.”
+Fixed bills (rent, insurance, streaming) fill themselves so they do not sit as “not entered.”
 
 ---
 
@@ -134,6 +141,8 @@ Fixed bills (rent, insurance, streaming) fill themselves so they do not show as 
 - **No telemetry**
 
 Everything stays on your computer. Optional App Lock is for casual privacy on a shared PC — not a substitute for full-disk encryption (BitLocker) or a good Windows password. Export backups before major changes. Clearing the database is permanent without a backup.
+
+Optional update checks contact GitHub only when the app looks for a newer release, and only download a package if you ask.
 
 ---
 
