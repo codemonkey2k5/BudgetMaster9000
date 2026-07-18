@@ -1002,8 +1002,7 @@ function viewTransactions(): string {
      <button class="btn btn-primary" type="submit" ${addLineId ? "" : "disabled"}>Submit</button>
    </form>
    <p class="dim mt-1">
-     Lines are managed on <strong>Plan</strong>. Submit adds to the selected line's total
-     (e.g. ${money(selectedLine?.actualAmount ?? 0)} + amount). The line stays selected for the next entry.
+     Submit adds to this line’s total for the month (for example ${money(selectedLine?.actualAmount ?? 0)} plus the amount you enter). The same line stays selected so you can enter several purchases in a row.
    </p>
  </div>`
     : `<div class="info-callout tx-add-panel">This month is closed. Reopen it from History to edit transactions.</div>`;
