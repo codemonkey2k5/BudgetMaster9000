@@ -251,6 +251,32 @@ fn resync_month(state: State<DbState>, year: i32, month: i32) -> Result<(), Stri
 }
 
 #[tauri::command]
+fn add_to_actual(
+    state: State<DbState>,
+    year: i32,
+    month: i32,
+    budget_line_id: i64,
+    amount: f64,
+    notes: Option<String>,
+) -> Result<f64, String> {
+    require_unlocked(&state)?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    db::add_to_actual(&conn, year, month, budget_line_id, amount, notes).map_err(map_err)
+}
+
+#[tauri::command]
+fn delete_month_line(
+    state: State<DbState>,
+    year: i32,
+    month: i32,
+    budget_line_id: i64,
+) -> Result<(), String> {
+    require_unlocked(&state)?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    db::delete_month_line(&conn, year, month, budget_line_id).map_err(map_err)
+}
+
+#[tauri::command]
 fn import_legacy_json(state: State<DbState>, json: String) -> Result<String, String> {
     require_unlocked(&state)?;
     let data: LegacyImport = serde_json::from_str(&json).map_err(|e| e.to_string())?;
@@ -474,6 +500,8 @@ pub fn run() {
             list_history,
             reopen_month,
             resync_month,
+            add_to_actual,
+            delete_month_line,
             import_legacy_json,
             export_json,
             load_demo_data,
@@ -494,7 +522,13 @@ pub fn run() {
                 }
                 if matches!(
                     start_view.as_str(),
-                    "dashboard" | "checkin" | "plan" | "history" | "settings" | "help"
+                    "dashboard"
+                        | "transactions"
+                        | "checkin"
+                        | "plan"
+                        | "history"
+                        | "settings"
+                        | "help"
                 ) {
                     parts.push(format!("view={start_view}"));
                 }

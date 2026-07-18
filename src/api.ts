@@ -172,6 +172,22 @@ export const api = {
     invoke<void>("reopen_month", { year, month }),
   resyncMonth: (year: number, month: number) =>
     invoke<void>("resync_month", { year, month }),
+  addToActual: (
+    year: number,
+    month: number,
+    budgetLineId: number,
+    amount: number,
+    notes?: string | null
+  ) =>
+    invoke<number>("add_to_actual", {
+      year,
+      month,
+      budgetLineId,
+      amount,
+      notes: notes ?? null,
+    }),
+  deleteMonthLine: (year: number, month: number, budgetLineId: number) =>
+    invoke<void>("delete_month_line", { year, month, budgetLineId }),
   importLegacyJson: (json: string) =>
     invoke<string>("import_legacy_json", { json }),
   exportJson: () => invoke<string>("export_json"),
@@ -228,7 +244,7 @@ export function statusLabel(s: string): string {
 }
 
 export function gradeExplain(g: string | null | undefined): string {
-  if (!g) return "No grade yet. Finish Check-In to score this month.";
+  if (!g) return "No grade yet. Use Close-Month to score this month.";
   const map: Record<string, string> = {
     A: "Excellent: most spending on track with a strong savings rate.",
     "B+": "Very good: mostly on plan with only small slips.",
@@ -236,8 +252,8 @@ export function gradeExplain(g: string | null | undefined): string {
     "B-": "Okay: more overspends or a thinner savings rate.",
     "C+": "Mixed: several categories need attention.",
     C: "Needs work: budget was missed in important areas.",
-    D: "Difficult month: review the Plan and next Check-In carefully.",
+    D: "Difficult month: review the Plan and next Close-Month carefully.",
     F: "Far off plan: use the scorecard tips to reset next month.",
   };
-  return map[g] || `Grade ${g} from your Check-In scorecard.`;
+  return map[g] || `Grade ${g} from your Close-Month scorecard.`;
 }

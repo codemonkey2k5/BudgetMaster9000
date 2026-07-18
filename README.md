@@ -42,16 +42,16 @@ Built for people who like a simple plan, a monthly ritual, and data that never l
 ## Get started
 
 1. **[Download the latest release](https://github.com/codemonkey2k5/BudgetMaster9000/releases/latest)** for Windows.
-2. Choose **one** of these — no extra software to install, no files to copy around:
+2. Choose **one** of these — no extra software, no manual data files to move:
 
-| Download | What to do |
-|----------|------------|
-| **Installer** (setup `.exe` or `.msi`) | Run it. Follow the prompts. Open Budget Master 9000 from the Start menu or desktop. |
-| **Portable** (`BudgetMaster9000.exe`) | Save it anywhere (Desktop, USB drive, folder). Double‑click it. |
+| Download | New install | Upgrade |
+|----------|-------------|---------|
+| **Installer** (setup `.exe` or `.msi`) | Run it. Open from Start menu or desktop. | Download the new setup and run it again. Your budget stays in AppData automatically. |
+| **Portable** (`BudgetMaster9000.exe`) | Save it anywhere. Double‑click it. | Download the new `.exe` and **replace** the old one in the **same folder**. Your `bm9000.db` next to it is left alone. |
 
-That’s it. On first launch the app creates your local database for you, then offers **Start blank**, **Load demo**, or **Import** a backup.
+That’s it. No copying databases, no editing config files, no setup scripts.
 
-There is nothing else to download, no accounts to create, and no setup scripts.
+On first launch the app creates your local database, then offers **Start blank**, **Load demo**, or **Import** a backup.
 
 > **Windows only (x64).** Works on modern Windows 10 and Windows 11.
 
@@ -61,10 +61,11 @@ There is nothing else to download, no accounts to create, and no setup scripts.
 
 | | |
 |---|---|
-| **Month-first dashboard** | Switch months, see health cards, progress bars, and category charts. |
+| **Month-first dashboard** | Command center: KPIs, charts, pace, runway, and attention reports. |
+| **Transactions** | Log spending anytime: add to totals, Multi-Entry, edit/delete month lines. |
 | **Plan vs Actual** | Recurring plan is your template. Each month is a snapshot you can still update while open. |
-| **Monthly Check-In** | A guided walkthrough for flexible spending only. Fixed bills auto-fill. Finish with a letter grade and plain-English tips. |
-| **Fixed vs Flexible categories** | Mark housing and subscriptions Fixed. Mark food and fun Flexible. Check-In only asks about what changes. |
+| **Close-Month** | Verify numbers when you are ready, then close with a letter grade and tips. Fixed bills auto-fill. |
+| **Fixed vs Flexible categories** | Mark housing and subscriptions Fixed. Mark food and fun Flexible. |
 | **History** | Closed months keep their grades. Reopen only when you need to fix something. |
 | **Import / export** | Bring in an older backup, or export a full backup anytime. |
 | **Optional App Lock** | Passphrase gate for shared computers. |
@@ -116,12 +117,12 @@ Net monthly income drives the math. Optional App Lock. Export backups. Clear dat
 ## How a typical month looks
 
 1. **Plan** once (or import a backup).
-2. Live the month.
-3. Open **Check-In**, enter flexible actuals, finish.
-4. Read the grade and the “needs attention” list.
+2. Live the month — log spending on **Transactions** anytime (or Multi-Entry by category).
+3. Open **Close-Month** when ready, verify totals, finish.
+4. Read the grade and the “needs attention” list on the Dashboard / scorecard.
 5. Adjust next month’s Plan if something consistently overruns.
 
-Fixed bills (rent, insurance, streaming) fill themselves on the Dashboard so they do not show as “not entered.”
+Fixed bills (rent, insurance, streaming) fill themselves so they do not show as “not entered.”
 
 ---
 

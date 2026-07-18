@@ -189,7 +189,7 @@ fn migrate(conn: &Connection) -> Result<(), DbError> {
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM settings", [], |r| r.get(0))?;
     if count == 0 {
         set_setting(conn, "theme", "dark")?;
-        set_setting(conn, "schema_version", "3")?;
+        set_setting(conn, "schema_version", "4")?;
         set_setting(
             conn,
             "income",
@@ -207,7 +207,140 @@ fn migrate(conn: &Connection) -> Result<(), DbError> {
             migrate_category_fixed_from_lines(conn)?;
             set_setting(conn, "schema_version", "3")?;
         }
+        let ver = get_setting(conn, "schema_version")?.unwrap_or_else(|| "3".into());
+        if ver == "3" {
+            // Fix duplicate month_lines created by name/category-based resync.
+            dedupe_all_month_lines(conn)?;
+            set_setting(conn, "schema_version", "4")?;
+        }
     }
+    Ok(())
+}
+
+/// Remove duplicate month_lines that share the same budget_line_id (or same
+/// name+category when budget_line_id is null). Keeps the row with an actual
+/// when possible, otherwise the lowest id. Actuals are re-pointed before delete.
+fn dedupe_all_month_lines(conn: &Connection) -> Result<(), DbError> {
+    let month_ids: Vec<i64> = {
+        let mut stmt = conn.prepare("SELECT id FROM months")?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+    for month_id in month_ids {
+        dedupe_month_lines(conn, month_id)?;
+    }
+    Ok(())
+}
+
+fn dedupe_month_lines(conn: &Connection, month_id: i64) -> Result<(), DbError> {
+    // 1) Duplicates with the same non-null budget_line_id
+    let mut stmt = conn.prepare(
+        "SELECT budget_line_id FROM month_lines
+         WHERE month_id = ?1 AND budget_line_id IS NOT NULL
+         GROUP BY budget_line_id HAVING COUNT(*) > 1",
+    )?;
+    let dup_bl_ids: Vec<i64> = stmt
+        .query_map(params![month_id], |r| r.get::<_, i64>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(stmt);
+
+    for bl_id in dup_bl_ids {
+        let mut stmt = conn.prepare(
+            "SELECT ml.id,
+                    CASE WHEN ma.id IS NOT NULL THEN 1 ELSE 0 END
+             FROM month_lines ml
+             LEFT JOIN month_actuals ma
+               ON ma.month_line_id = ml.id AND ma.month_id = ml.month_id
+             WHERE ml.month_id = ?1 AND ml.budget_line_id = ?2
+             ORDER BY (CASE WHEN ma.id IS NOT NULL THEN 0 ELSE 1 END), ml.id",
+        )?;
+        let rows: Vec<(i64, bool)> = stmt
+            .query_map(params![month_id, bl_id], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)? == 1))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+
+        if rows.len() < 2 {
+            continue;
+        }
+        let keep_id = rows[0].0;
+        for (id, _) in rows.iter().skip(1) {
+            merge_or_drop_month_line(conn, keep_id, *id)?;
+        }
+    }
+
+    // 2) Orphan rows (null budget_line_id) that collide with a keyed row on name+category
+    conn.execute(
+        "DELETE FROM month_lines
+         WHERE month_id = ?1
+           AND budget_line_id IS NULL
+           AND EXISTS (
+             SELECT 1 FROM month_lines k
+             WHERE k.month_id = month_lines.month_id
+               AND k.budget_line_id IS NOT NULL
+               AND k.name = month_lines.name
+               AND k.category_name = month_lines.category_name
+           )",
+        params![month_id],
+    )?;
+
+    // 3) Same name+category duplicates without shared budget_line_id: keep lowest id
+    let mut stmt = conn.prepare(
+        "SELECT name, category_name FROM month_lines
+         WHERE month_id = ?1
+         GROUP BY name, category_name HAVING COUNT(*) > 1",
+    )?;
+    let name_dups: Vec<(String, String)> = stmt
+        .query_map(params![month_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(stmt);
+
+    for (name, cat) in name_dups {
+        let mut stmt = conn.prepare(
+            "SELECT ml.id FROM month_lines ml
+             LEFT JOIN month_actuals ma ON ma.month_line_id = ml.id
+             WHERE ml.month_id = ?1 AND ml.name = ?2 AND ml.category_name = ?3
+             ORDER BY (CASE WHEN ma.id IS NOT NULL THEN 0 ELSE 1 END), ml.id",
+        )?;
+        let ids: Vec<i64> = stmt
+            .query_map(params![month_id, name, cat], |r| r.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+
+        if ids.len() < 2 {
+            continue;
+        }
+        let keep_id = ids[0];
+        for id in ids.iter().skip(1) {
+            merge_or_drop_month_line(conn, keep_id, *id)?;
+        }
+    }
+    Ok(())
+}
+
+fn merge_or_drop_month_line(conn: &Connection, keep_id: i64, drop_id: i64) -> Result<(), DbError> {
+    let keeper_has: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM month_actuals WHERE month_line_id = ?1",
+        params![keep_id],
+        |r| r.get(0),
+    )?;
+    if keeper_has == 0 {
+        conn.execute(
+            "UPDATE month_actuals SET month_line_id = ?1 WHERE month_line_id = ?2",
+            params![keep_id, drop_id],
+        )?;
+    } else {
+        conn.execute(
+            "DELETE FROM month_actuals WHERE month_line_id = ?1",
+            params![drop_id],
+        )?;
+    }
+    conn.execute("DELETE FROM month_lines WHERE id = ?1", params![drop_id])?;
     Ok(())
 }
 
@@ -378,9 +511,15 @@ pub fn upsert_category(conn: &Connection, input: &CategoryInput) -> Result<Categ
             "UPDATE budget_lines SET is_fixed=?1 WHERE category_id=?2 AND active=1",
             params![input.is_fixed as i64, id],
         )?;
+        // Keep open-month snapshots in sync so resync does not create name-based duplicates
+        let color: String = conn.query_row(
+            "SELECT color FROM categories WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )?;
         conn.execute(
-            "UPDATE month_lines SET is_fixed=?1 WHERE category_id=?2",
-            params![input.is_fixed as i64, id],
+            "UPDATE month_lines SET is_fixed=?1, category_name=?2, category_color=?3 WHERE category_id=?4",
+            params![input.is_fixed as i64, name, color, id],
         )?;
         id
     } else {
@@ -555,26 +694,108 @@ pub fn ensure_month(conn: &Connection, year: i32, month: i32) -> Result<i64, DbE
 }
 
 fn snapshot_plan_into_month(conn: &Connection, month_id: i64) -> Result<(), DbError> {
+    // Heal any pre-existing doubles before upserting by plan line id.
+    dedupe_month_lines(conn, month_id)?;
+
     let lines = list_budget_lines(conn)?;
     for line in lines {
-        conn.execute(
-            "INSERT OR IGNORE INTO month_lines(month_id, budget_line_id, name, category_id, category_name, category_color, budget_amount, is_fixed)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                month_id,
-                line.id,
-                line.name,
-                line.category_id,
-                line.category_name,
-                conn.query_row(
-                    "SELECT color FROM categories WHERE id = ?1",
-                    params![line.category_id],
-                    |r| r.get::<_, String>(0)
-                )?,
-                line.monthly_amount,
-                line.is_fixed as i64
-            ],
+        let color: String = conn.query_row(
+            "SELECT color FROM categories WHERE id = ?1",
+            params![line.category_id],
+            |r| r.get(0),
         )?;
+
+        // Prefer match by budget_line_id so renames/category moves update in place.
+        let existing_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM month_lines WHERE month_id = ?1 AND budget_line_id = ?2",
+                params![month_id, line.id],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        if let Some(ml_id) = existing_id {
+            conn.execute(
+                "UPDATE month_lines SET name=?1, category_id=?2, category_name=?3,
+                 category_color=?4, budget_amount=?5, is_fixed=?6 WHERE id=?7",
+                params![
+                    line.name,
+                    line.category_id,
+                    line.category_name,
+                    color,
+                    line.monthly_amount,
+                    line.is_fixed as i64,
+                    ml_id
+                ],
+            )?;
+        } else {
+            // Fallback: adopt an orphan row with same name+category (legacy snapshots).
+            let orphan: Option<i64> = conn
+                .query_row(
+                    "SELECT id FROM month_lines
+                     WHERE month_id = ?1 AND name = ?2 AND category_name = ?3
+                       AND (budget_line_id IS NULL OR budget_line_id = 0)
+                     LIMIT 1",
+                    params![month_id, line.name, line.category_name],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if let Some(ml_id) = orphan {
+                conn.execute(
+                    "UPDATE month_lines SET budget_line_id=?1, category_id=?2, category_color=?3,
+                     budget_amount=?4, is_fixed=?5 WHERE id=?6",
+                    params![
+                        line.id,
+                        line.category_id,
+                        color,
+                        line.monthly_amount,
+                        line.is_fixed as i64,
+                        ml_id
+                    ],
+                )?;
+            } else {
+                // Avoid UNIQUE(month_id, name, category_name) clash with a stale row
+                // that has a different budget_line_id: update that row instead.
+                let by_name: Option<i64> = conn
+                    .query_row(
+                        "SELECT id FROM month_lines
+                         WHERE month_id = ?1 AND name = ?2 AND category_name = ?3
+                         LIMIT 1",
+                        params![month_id, line.name, line.category_name],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if let Some(ml_id) = by_name {
+                    conn.execute(
+                        "UPDATE month_lines SET budget_line_id=?1, category_id=?2, category_color=?3,
+                         budget_amount=?4, is_fixed=?5 WHERE id=?6",
+                        params![
+                            line.id,
+                            line.category_id,
+                            color,
+                            line.monthly_amount,
+                            line.is_fixed as i64,
+                            ml_id
+                        ],
+                    )?;
+                } else {
+                    conn.execute(
+                        "INSERT INTO month_lines(month_id, budget_line_id, name, category_id, category_name, category_color, budget_amount, is_fixed)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                        params![
+                            month_id,
+                            line.id,
+                            line.name,
+                            line.category_id,
+                            line.category_name,
+                            color,
+                            line.monthly_amount,
+                            line.is_fixed as i64
+                        ],
+                    )?;
+                }
+            }
+        }
     }
     apply_fixed_actuals(conn, month_id)?;
     Ok(())
@@ -1045,8 +1266,119 @@ pub fn resync_open_month(conn: &Connection, year: i32, month: i32) -> Result<(),
     if info.status == "reviewed" {
         return Err(DbError::Message("Cannot resync a closed month".into()));
     }
-    // Add any new plan lines not in snapshot
+    // Upsert plan lines by budget_line_id (no duplicate rows on rename/move).
     snapshot_plan_into_month(conn, info.id)?;
+    Ok(())
+}
+
+/// Add `amount` to a month line's actual total (mid-month logging).
+/// If no actual exists yet, starts from 0 + amount (not from plan budget).
+pub fn add_to_actual(
+    conn: &Connection,
+    year: i32,
+    month: i32,
+    budget_line_id: i64,
+    amount: f64,
+    notes: Option<String>,
+) -> Result<f64, DbError> {
+    if !amount.is_finite() || amount <= 0.0 {
+        return Err(DbError::Message(
+            "Amount must be a positive number.".into(),
+        ));
+    }
+    let month_id = ensure_month(conn, year, month)?;
+    let status: String = conn.query_row(
+        "SELECT status FROM months WHERE id = ?1",
+        params![month_id],
+        |r| r.get(0),
+    )?;
+    if status == "reviewed" {
+        return Err(DbError::Message(
+            "Month is closed. Reopen it from History to edit.".into(),
+        ));
+    }
+
+    // Ensure the plan line is on this month's snapshot
+    let has_line: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM month_lines WHERE month_id = ?1 AND budget_line_id = ?2",
+            params![month_id, budget_line_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if has_line.is_none() {
+        snapshot_plan_into_month(conn, month_id)?;
+    }
+
+    let month_line_id: i64 = conn
+        .query_row(
+            "SELECT id FROM month_lines WHERE month_id = ?1 AND budget_line_id = ?2",
+            params![month_id, budget_line_id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| {
+            DbError::Message("That budget line is not on this month. Update from Plan first.".into())
+        })?;
+
+    let current: Option<f64> = conn
+        .query_row(
+            "SELECT actual_amount FROM month_actuals WHERE month_id = ?1 AND month_line_id = ?2",
+            params![month_id, month_line_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let new_total = current.unwrap_or(0.0) + amount;
+    let note = notes.unwrap_or_default();
+
+    conn.execute(
+        "INSERT INTO month_actuals(month_id, month_line_id, actual_amount, notes)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(month_id, month_line_id) DO UPDATE SET
+           actual_amount = excluded.actual_amount,
+           notes = CASE
+             WHEN excluded.notes != '' THEN excluded.notes
+             ELSE month_actuals.notes
+           END",
+        params![month_id, month_line_id, new_total, note],
+    )?;
+    Ok(new_total)
+}
+
+/// Remove a line from an open month snapshot only (does not delete the Plan template).
+pub fn delete_month_line(
+    conn: &Connection,
+    year: i32,
+    month: i32,
+    budget_line_id: i64,
+) -> Result<(), DbError> {
+    let month_id = ensure_month(conn, year, month)?;
+    let status: String = conn.query_row(
+        "SELECT status FROM months WHERE id = ?1",
+        params![month_id],
+        |r| r.get(0),
+    )?;
+    if status == "reviewed" {
+        return Err(DbError::Message(
+            "Month is closed. Reopen it from History to edit.".into(),
+        ));
+    }
+
+    let ml_id: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM month_lines WHERE month_id = ?1 AND budget_line_id = ?2",
+            params![month_id, budget_line_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(ml_id) = ml_id else {
+        return Err(DbError::Message("Line not found on this month.".into()));
+    };
+    conn.execute(
+        "DELETE FROM month_actuals WHERE month_line_id = ?1",
+        params![ml_id],
+    )?;
+    conn.execute("DELETE FROM month_lines WHERE id = ?1", params![ml_id])?;
     Ok(())
 }
 
@@ -1544,6 +1876,157 @@ mod tests {
         let lines = list_budget_lines(&conn).unwrap();
         assert!(lines.iter().any(|l| l.name == "Groceries"));
         assert!(lines.iter().any(|l| l.name == "Rent" && l.is_fixed));
+        drop(conn);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn resync_after_rename_does_not_double_lines() {
+        let (conn, path) = temp_db();
+        load_demo(&conn).unwrap();
+        let (y, m) = current_year_month();
+        let dash = get_dashboard(&conn, y, m).unwrap();
+        let before = dash.lines.len();
+
+        let groceries = list_budget_lines(&conn)
+            .unwrap()
+            .into_iter()
+            .find(|l| l.name.contains("Groceries"))
+            .expect("groceries line");
+
+        // Mid-month actual on original name
+        add_to_actual(&conn, y, m, groceries.id, 50.0, None).unwrap();
+
+        upsert_budget_line(
+            &conn,
+            &BudgetLineInput {
+                id: Some(groceries.id),
+                name: "Groceries Plus".into(),
+                category_id: groceries.category_id,
+                amount: groceries.amount,
+                frequency: groceries.frequency.clone(),
+                is_fixed: None,
+                notes: None,
+            },
+        )
+        .unwrap();
+
+        resync_open_month(&conn, y, m).unwrap();
+        let dash2 = get_dashboard(&conn, y, m).unwrap();
+        assert_eq!(
+            dash2.lines.len(),
+            before,
+            "resync after rename must not create a double entry"
+        );
+        let renamed: Vec<_> = dash2
+            .lines
+            .iter()
+            .filter(|l| l.budget_line_id == groceries.id)
+            .collect();
+        assert_eq!(renamed.len(), 1);
+        assert_eq!(renamed[0].name, "Groceries Plus");
+        assert!(
+            (renamed[0].actual_amount.unwrap_or(0.0) - 50.0).abs() < 0.01,
+            "actual must survive rename+resync"
+        );
+        // No leftover old-name row without a budget_line_id match
+        assert!(!dash2.lines.iter().any(|l| l.name == "Groceries"));
+
+        drop(conn);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn resync_after_category_rename_no_doubles() {
+        let (conn, path) = temp_db();
+        load_demo(&conn).unwrap();
+        let (y, m) = current_year_month();
+        let before = get_dashboard(&conn, y, m).unwrap().lines.len();
+
+        let food = list_categories(&conn)
+            .unwrap()
+            .into_iter()
+            .find(|c| c.name == "Food")
+            .unwrap();
+        upsert_category(
+            &conn,
+            &CategoryInput {
+                id: Some(food.id),
+                name: "Food & Dining".into(),
+                is_fixed: food.is_fixed,
+            },
+        )
+        .unwrap();
+        resync_open_month(&conn, y, m).unwrap();
+
+        let dash = get_dashboard(&conn, y, m).unwrap();
+        assert_eq!(dash.lines.len(), before);
+        assert!(dash
+            .lines
+            .iter()
+            .any(|l| l.category_name == "Food & Dining"));
+        assert!(!dash.lines.iter().any(|l| l.category_name == "Food"));
+
+        drop(conn);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn add_to_actual_accumulates() {
+        let (conn, path) = temp_db();
+        load_demo(&conn).unwrap();
+        let (y, m) = current_year_month();
+        let line = list_budget_lines(&conn)
+            .unwrap()
+            .into_iter()
+            .find(|l| l.name.contains("Dining"))
+            .expect("dining");
+
+        let t1 = add_to_actual(&conn, y, m, line.id, 20.0, None).unwrap();
+        assert!((t1 - 20.0).abs() < 0.01);
+        let t2 = add_to_actual(&conn, y, m, line.id, 20.0, None).unwrap();
+        assert!((t2 - 40.0).abs() < 0.01);
+        let t3 = add_to_actual(&conn, y, m, line.id, 60.0, None).unwrap();
+        assert!((t3 - 100.0).abs() < 0.01);
+
+        // Five more $20 → 200
+        for _ in 0..5 {
+            add_to_actual(&conn, y, m, line.id, 20.0, None).unwrap();
+        }
+        let dash = get_dashboard(&conn, y, m).unwrap();
+        let row = dash
+            .lines
+            .iter()
+            .find(|l| l.budget_line_id == line.id)
+            .unwrap();
+        assert!((row.actual_amount.unwrap() - 200.0).abs() < 0.01);
+
+        assert!(add_to_actual(&conn, y, m, line.id, 0.0, None).is_err());
+        assert!(add_to_actual(&conn, y, m, line.id, -5.0, None).is_err());
+
+        drop(conn);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn delete_month_line_keeps_plan() {
+        let (conn, path) = temp_db();
+        load_demo(&conn).unwrap();
+        let (y, m) = current_year_month();
+        let line = list_budget_lines(&conn)
+            .unwrap()
+            .into_iter()
+            .find(|l| l.name.contains("Fun"))
+            .expect("fun money");
+        let _ = get_dashboard(&conn, y, m).unwrap();
+        delete_month_line(&conn, y, m, line.id).unwrap();
+        let dash = get_dashboard(&conn, y, m).unwrap();
+        assert!(!dash.lines.iter().any(|l| l.budget_line_id == line.id));
+        // Plan template still exists
+        assert!(list_budget_lines(&conn)
+            .unwrap()
+            .iter()
+            .any(|l| l.id == line.id));
         drop(conn);
         let _ = std::fs::remove_file(path);
     }

@@ -39,60 +39,102 @@ Chart.register(
  Legend
 );
 
-type View = "dashboard" | "checkin" | "plan" | "history" | "settings" | "help";
+type View =
+  | "dashboard"
+  | "transactions"
+  | "checkin"
+  | "plan"
+  | "history"
+  | "settings"
+  | "help";
 
 interface State {
- status: AppStatus | null;
- view: View;
- year: number;
- month: number;
- dash: MonthDashboard | null;
- lines: BudgetLine[];
- categories: Category[];
- income: IncomeSettings | null;
- history: MonthInfo[];
- filter: string;
- search: string;
- checkinStep: number;
- checkinActuals: Record<number, string>;
- checkinNotes: string;
- checkinResult: CheckInResult | null;
- editLine: BudgetLine | null;
- editCategory: Category | null;
- helpQuery: string;
- showCategoryNotice: boolean;
- toast: string | null;
- toastError: boolean;
+  status: AppStatus | null;
+  view: View;
+  year: number;
+  month: number;
+  dash: MonthDashboard | null;
+  lines: BudgetLine[];
+  categories: Category[];
+  income: IncomeSettings | null;
+  history: MonthInfo[];
+  filter: string;
+  search: string;
+  checkinStep: number;
+  checkinActuals: Record<number, string>;
+  checkinNotes: string;
+  checkinResult: CheckInResult | null;
+  editLine: BudgetLine | null;
+  editCategory: Category | null;
+  /** Absolute-edit of a month line actual on Transactions */
+  editActualId: number | null;
+  /** Multi-Entry panel open */
+  multiEntryOpen: boolean;
+  multiCatId: number | null;
+  multiLineId: number | null;
+  helpQuery: string;
+  showCategoryNotice: boolean;
+  toast: string | null;
+  toastError: boolean;
 }
 
 const state: State = {
- status: null,
- view: "dashboard",
- year: new Date().getFullYear(),
- month: new Date().getMonth() + 1,
- dash: null,
- lines: [],
- categories: [],
- income: null,
- history: [],
- filter: "all",
- search: "",
- checkinStep: 0,
- checkinActuals: {},
- checkinNotes: "",
- checkinResult: null,
- editLine: null,
- editCategory: null,
- helpQuery: "",
- showCategoryNotice: false,
- toast: null,
- toastError: false,
+  status: null,
+  view: "dashboard",
+  year: new Date().getFullYear(),
+  month: new Date().getMonth() + 1,
+  dash: null,
+  lines: [],
+  categories: [],
+  income: null,
+  history: [],
+  filter: "all",
+  search: "",
+  checkinStep: 0,
+  checkinActuals: {},
+  checkinNotes: "",
+  checkinResult: null,
+  editLine: null,
+  editCategory: null,
+  editActualId: null,
+  multiEntryOpen: false,
+  multiCatId: null,
+  multiLineId: null,
+  helpQuery: "",
+  showCategoryNotice: false,
+  toast: null,
+  toastError: false,
 };
 
 let pieChart: Chart | null = null;
 let barChart: Chart | null = null;
+let catBarChart: Chart | null = null;
+let histChart: Chart | null = null;
 let toastTimer: number | null = null;
 const app = document.querySelector<HTMLDivElement>("#app")!;
+
+function isMonthOpen(): boolean {
+  return state.dash?.month.status !== "reviewed";
+}
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(year, month, 0).getDate();
+}
+
+function dayOfMonth(year: number, month: number): number {
+  const now = new Date();
+  if (now.getFullYear() === year && now.getMonth() + 1 === month) {
+    return now.getDate();
+  }
+  // Past months: treat as complete; future: day 1
+  if (
+    year < now.getFullYear() ||
+    (year === now.getFullYear() && month < now.getMonth() + 1)
+  ) {
+    return daysInMonth(year, month);
+  }
+  return 1;
+}
 
 function variableLines(lines: MonthLine[]): MonthLine[] {
  return lines.filter((l) => !l.isFixed);
@@ -270,8 +312,16 @@ async function boot() {
  return;
  }
  const startView = new URLSearchParams(location.search).get("view");
- if (startView === "dashboard" || startView === "checkin" || startView === "plan" || startView === "history" || startView === "settings" || startView === "help") {
- state.view = startView as View;
+ if (
+   startView === "dashboard" ||
+   startView === "transactions" ||
+   startView === "checkin" ||
+   startView === "plan" ||
+   startView === "history" ||
+   startView === "settings" ||
+   startView === "help"
+ ) {
+   state.view = startView as View;
  }
  const [y, m] = await api.currentMonth();
  state.year = y;
@@ -414,8 +464,8 @@ function categoryNoticeHtml(): string {
  <h2>Quick setup after import</h2>
  <p>Your old budget was imported. Please take one minute on the <strong>Plan</strong> screen to check each <strong>category</strong>:</p>
  <ul class="tips-list">
- <li><strong>Fixed</strong>: bills that are the same every month (housing, utilities, subscriptions). Check-In will skip these.</li>
- <li><strong>Flexible</strong>: spending that changes (food, fun, charging). Check-In will ask for actual amounts.</li>
+ <li><strong>Fixed</strong>: bills that are the same every month (housing, utilities, subscriptions). Treated as on plan.</li>
+ <li><strong>Flexible</strong>: spending that changes (food, fun, charging). Log actuals on Transactions anytime.</li>
  </ul>
  <p class="dim">We may have guessed some Fixed categories for you. Open each category with Edit and confirm.</p>
  <div class="flex-gap">
@@ -441,7 +491,8 @@ function shell(content: string): string {
  </div>
  </div>
  ${nav("dashboard", "D", "Dashboard")}
- ${nav("checkin", "C", "Check-In")}
+ ${nav("transactions", "T", "Transactions")}
+ ${nav("checkin", "C", "Close-Month")}
  ${nav("plan", "P", "Plan")}
  ${nav("history", "H", "History")}
  ${nav("help", "?", "Help")}
@@ -495,6 +546,10 @@ function bindShell() {
  state.checkinResult = null;
  seedCheckinActuals();
  }
+ if (state.view !== "transactions") {
+ state.editActualId = null;
+ state.multiEntryOpen = false;
+ }
  render();
  });
  });
@@ -547,6 +602,9 @@ function render() {
  case "dashboard":
  content = viewDashboard();
  break;
+ case "transactions":
+ content = viewTransactions();
+ break;
  case "checkin":
  content = viewCheckin();
  break;
@@ -563,11 +621,21 @@ function render() {
  content = viewSettings();
  break;
  }
+ if (state.view !== "dashboard") {
+   pieChart?.destroy();
+   barChart?.destroy();
+   catBarChart?.destroy();
+   histChart?.destroy();
+   pieChart = barChart = catBarChart = histChart = null;
+ }
  app.innerHTML = shell(content);
  bindShell();
  switch (state.view) {
  case "dashboard":
  bindDashboard();
+ break;
+ case "transactions":
+ bindTransactions();
  break;
  case "checkin":
  bindCheckin();
@@ -587,150 +655,586 @@ function render() {
  }
 }
 
-/* DASHBOARD */
+/* DASHBOARD — KPIs / charts / reports only (no line table; that is Transactions) */
 function viewDashboard(): string {
- const d = state.dash;
- if (!d) return `<div class="empty">Loading...</div>`;
+  const d = state.dash;
+  if (!d) return `<div class="empty">Loading...</div>`;
 
- const hasActuals = d.lines.some((l) => l.actualAmount != null);
- const remaining =
- d.month.netIncome - (hasActuals ? d.actualTotal : d.budgetedTotal);
- const variance = hasActuals ? d.budgetedTotal - d.actualTotal : remaining;
+  const hasActuals = d.lines.some((l) => l.actualAmount != null);
+  const remaining =
+    d.month.netIncome - (hasActuals ? d.actualTotal : d.budgetedTotal);
+  const variance = hasActuals ? d.budgetedTotal - d.actualTotal : remaining;
+  const open = d.month.status !== "reviewed";
+  const vars = variableLines(d.lines);
+  const flexEntered = vars.filter((l) => l.actualAmount != null).length;
+  const flexTotal = vars.length;
+  const completionPct =
+    flexTotal > 0 ? Math.round((flexEntered / flexTotal) * 100) : 100;
 
- let lines = d.lines;
- if (state.filter !== "all") lines = lines.filter((l) => l.status === state.filter);
- if (state.search.trim()) {
- const q = state.search.toLowerCase();
- lines = lines.filter(
- (l) =>
- l.name.toLowerCase().includes(q) ||
- l.categoryName.toLowerCase().includes(q)
- );
+  const dim = daysInMonth(state.year, state.month);
+  const day = dayOfMonth(state.year, state.month);
+  const monthFrac = dim > 0 ? day / dim : 1;
+  const expectedSpend = d.budgetedTotal * monthFrac;
+  const actualSpend = hasActuals ? d.actualTotal : 0;
+  const paceDelta = expectedSpend - actualSpend;
+  const daysLeft = Math.max(dim - day, 0);
+  const dailyRunway =
+    daysLeft > 0 && remaining > 0 ? remaining / daysLeft : null;
+
+  const fixedBudget = fixedLines(d.lines).reduce((s, l) => s + l.budgetAmount, 0);
+  const flexBudget = vars.reduce((s, l) => s + l.budgetAmount, 0);
+  const fixedActual = fixedLines(d.lines).reduce(
+    (s, l) => s + (l.actualAmount ?? l.budgetAmount),
+    0
+  );
+  const flexActual = vars.reduce((s, l) => s + (l.actualAmount ?? 0), 0);
+
+  const over = d.lines
+    .filter((l) => l.status === "over")
+    .sort(
+      (a, b) =>
+        (b.actualAmount ?? 0) - (b.budgetAmount) - ((a.actualAmount ?? 0) - a.budgetAmount)
+    )
+    .slice(0, 5);
+  const wins = d.lines
+    .filter((l) => l.status === "under" || l.status === "on_plan")
+    .slice(0, 5);
+
+  const histClosed = state.history
+    .filter((h) => h.status === "reviewed")
+    .slice(0, 6)
+    .reverse();
+
+  const statusBadge =
+    d.month.status === "reviewed"
+      ? `<span class="badge badge-on_plan">Closed</span>`
+      : `<span class="badge badge-under">Open</span>`;
+
+  return `
+ <div class="page-header dash-hero">
+   <div>
+     <h2>Month command center</h2>
+     <div class="sub flex-gap" style="margin-top:0.35rem">
+       <strong>${monthName(state.month)} ${state.year}</strong>
+       ${statusBadge}
+       ${d.month.grade ? `<span class="grade-pill" title="${esc(gradeExplain(d.month.grade))}">${esc(d.month.grade)}</span>` : ""}
+       ${d.savingsRate != null ? `<span class="dim">Savings ${d.savingsRate.toFixed(0)}%</span>` : ""}
+     </div>
+   </div>
+   <div class="flex-gap">
+     ${monthNavHtml()}
+     ${
+       open
+         ? `<button class="btn btn-primary btn-sm" id="dash-goto-tx">Log spending</button>
+            <button class="btn btn-ghost btn-sm" id="dash-goto-multi">Multi-Entry</button>`
+         : `<button class="btn btn-ghost btn-sm" id="dash-goto-tx">View transactions</button>`
+     }
+   </div>
+ </div>
+
+ <div class="grid-kpi mb-2">
+   <div class="card stat-card emerald"><div class="stat-label">Net income</div><div class="stat-value">${money(d.month.netIncome)}</div></div>
+   <div class="card stat-card"><div class="stat-label">Budgeted</div><div class="stat-value">${money(d.budgetedTotal)}</div></div>
+   <div class="card stat-card rose"><div class="stat-label">${hasActuals ? "Actual spent" : "No actuals yet"}</div><div class="stat-value">${hasActuals ? money(d.actualTotal) : "—"}</div></div>
+   <div class="card stat-card amber"><div class="stat-label">${hasActuals ? "Vs budget" : "Planned surplus"}</div><div class="stat-value ${variance >= 0 ? "pos" : "neg"}">${money(variance)}</div></div>
+   <div class="card stat-card sky"><div class="stat-label">Remaining cash</div><div class="stat-value ${remaining >= 0 ? "pos" : "neg"}">${money(remaining)}</div></div>
+   <div class="card stat-card"><div class="stat-label">Flexible logged</div><div class="stat-value" style="font-size:1.2rem">${flexEntered}/${flexTotal}</div>
+     <div class="progress mt-1"><span style="width:${completionPct}%"></span></div>
+     <div class="dim" style="font-size:0.75rem;margin-top:0.25rem">${completionPct}% of flexible lines</div>
+   </div>
+ </div>
+
+ <div class="grid-3 mb-2">
+   <div class="card"><div class="card-pad section-title">Spending by category</div><div class="chart-box"><canvas id="chart-pie"></canvas></div></div>
+   <div class="card"><div class="card-pad section-title">Income · budget · actual</div><div class="chart-box"><canvas id="chart-bar"></canvas></div></div>
+   <div class="card"><div class="card-pad section-title">Budget used by category</div><div class="chart-box chart-box-tall"><canvas id="chart-catbar"></canvas></div></div>
+ </div>
+
+ <div class="grid-3 mb-2">
+   <div class="card card-pad report-panel">
+     <div class="section-title">Pace & runway</div>
+     <p class="dim mb-1">Day ${day} of ${dim} (${Math.round(monthFrac * 100)}% of month)</p>
+     <div class="report-metric"><span>Expected spend to date</span><strong class="mono">${money(expectedSpend)}</strong></div>
+     <div class="report-metric"><span>Actual spend</span><strong class="mono">${money(actualSpend)}</strong></div>
+     <div class="report-metric"><span>Pace</span>
+       <strong class="${paceDelta >= 0 ? "pos" : "neg"}">${
+         !hasActuals
+           ? "Log spending to track pace"
+           : paceDelta >= 0
+             ? `${money(paceDelta)} under expected pace`
+             : `${money(-paceDelta)} over expected pace`
+       }</strong>
+     </div>
+     <div class="report-metric"><span>Cash / day left</span>
+       <strong class="mono">${dailyRunway != null ? money(dailyRunway) : daysLeft === 0 ? "Month complete" : "—"}</strong>
+     </div>
+   </div>
+   <div class="card card-pad report-panel">
+     <div class="section-title">Fixed vs flexible</div>
+     <div class="report-metric"><span>Fixed budget</span><strong class="mono">${money(fixedBudget)}</strong></div>
+     <div class="report-metric"><span>Fixed actual</span><strong class="mono">${money(fixedActual)}</strong></div>
+     <div class="report-metric"><span>Flexible budget</span><strong class="mono">${money(flexBudget)}</strong></div>
+     <div class="report-metric"><span>Flexible actual</span><strong class="mono">${money(flexActual)}</strong></div>
+     <div class="split-bar mt-1" title="Fixed vs flexible budget share">
+       <span style="width:${d.budgetedTotal > 0 ? (fixedBudget / d.budgetedTotal) * 100 : 50}%" class="split-fixed"></span>
+       <span style="width:${d.budgetedTotal > 0 ? (flexBudget / d.budgetedTotal) * 100 : 50}%" class="split-flex"></span>
+     </div>
+     <div class="dim mt-1" style="font-size:0.75rem">Fixed · Flexible (share of budget)</div>
+   </div>
+   <div class="card card-pad report-panel">
+     <div class="section-title">Needs attention</div>
+     ${
+       over.length
+         ? `<ul class="insight-list">${over
+             .map((l) => {
+               const overAmt = (l.actualAmount ?? 0) - l.budgetAmount;
+               return `<li class="attn">${esc(l.name)}: <strong class="mono">${money(overAmt)}</strong> over plan</li>`;
+             })
+             .join("")}</ul>`
+         : `<p class="dim">${hasActuals ? "Nothing over budget — nice work." : "No overspends yet. Log spending on Transactions."}</p>`
+     }
+     <div class="section-title mt-2">On track</div>
+     ${
+       wins.length
+         ? `<ul class="insight-list">${wins
+             .map(
+               (l) =>
+                 `<li class="win">${esc(l.name)}: ${statusLabel(l.status)} (${money(l.actualAmount ?? 0)})</li>`
+             )
+             .join("")}</ul>`
+         : `<p class="dim">Enter actuals to see wins here.</p>`
+     }
+   </div>
+ </div>
+
+ ${
+   histClosed.length
+     ? `<div class="card mb-2">
+   <div class="card-pad section-title">Recent closed months</div>
+   <div class="chart-box chart-box-sm"><canvas id="chart-hist"></canvas></div>
+   <div class="hist-strip card-pad">
+     ${histClosed
+       .map(
+         (h) =>
+           `<div class="hist-chip" title="${esc(gradeExplain(h.grade))}">
+             <span class="dim">${monthName(h.month).slice(0, 3)} ${h.year}</span>
+             <strong class="grade-pill">${esc(h.grade || "—")}</strong>
+           </div>`
+       )
+       .join("")}
+   </div>
+ </div>`
+     : ""
  }
 
- const rows = lines
- .map((l) => {
- const pct = l.pctUsed ?? 0;
- const barPct = Math.min(pct, 100);
- const progClass = l.status === "over" ? "over" : pct > 90 ? "warn" : "";
- return `
- <tr>
- <td>
- <div style="font-weight:700">${esc(l.name)}</div>
- <div class="dim">${l.isFixed ? "Fixed bill" : "Flexible"}</div>
- </td>
- <td><span class="badge badge-cat" style="border-left:3px solid ${l.categoryColor}">${esc(l.categoryName)}</span></td>
- <td class="mono">${money(l.budgetAmount)}</td>
- <td class="mono">${l.actualAmount != null ? money(l.actualAmount) : "-"}</td>
- <td>
- <div class="progress ${progClass}" title="${pct.toFixed(0)}%"><span style="width:${barPct}%"></span></div>
- <div class="dim mt-1">${l.actualAmount != null ? pct.toFixed(0) + "%" : ": "}</div>
- </td>
- <td><span class="badge badge-${l.status}">${statusLabel(l.status)}</span></td>
- </tr>`;
- })
- .join("");
-
- return `
- <div class="page-header">
- <div>
- <h2>Monthly health</h2>
- <div class="sub">
- ${monthName(state.month)} ${state.year}  - 
- ${d.month.status === "reviewed" ? "Closed (reviewed)" : "Open (still editable)"}
- ${d.month.grade ? `  -  Grade <strong title="${esc(gradeExplain(d.month.grade))}">${esc(d.month.grade)}</strong>` : ""}
- ${d.savingsRate != null ? `  -  Savings ${d.savingsRate.toFixed(0)}%` : ""}
- </div>
- </div>
- ${monthNavHtml()}
- </div>
-
- <div class="info-callout mb-2">
- <strong>Plan vs this month:</strong> the Dashboard shows a <em>snapshot</em> of your Plan for
- <strong>${monthName(state.month)} ${state.year}</strong>.
- Edit recurring amounts on <strong>Plan</strong>. If this month is still open and you added new Plan lines,
- click <em>Update this month from Plan</em> below.
- <a href="#" data-goto-help="plan-vs-dashboard">Learn more in Help</a>
- </div>
-
- <div class="grid-5 mb-2">
- <div class="card stat-card emerald"><div class="stat-label">Net income</div><div class="stat-value">${money(d.month.netIncome)}</div></div>
- <div class="card stat-card"><div class="stat-label">Budgeted</div><div class="stat-value">${money(d.budgetedTotal)}</div></div>
- <div class="card stat-card rose"><div class="stat-label">${hasActuals ? "Actual spent" : "No actuals yet"}</div><div class="stat-value">${hasActuals ? money(d.actualTotal) : ": "}</div></div>
- <div class="card stat-card amber"><div class="stat-label">${hasActuals ? "Vs budget" : "Planned surplus"}</div><div class="stat-value ${variance >= 0 ? "pos" : "neg"}">${money(variance)}</div></div>
- <div class="card stat-card sky"><div class="stat-label">Remaining cash</div><div class="stat-value ${remaining >= 0 ? "pos" : "neg"}">${money(remaining)}</div></div>
- </div>
-
- <div class="grid-2 mb-2">
- <div class="card"><div class="card-pad section-title">Spending by category</div><div class="chart-box"><canvas id="chart-pie"></canvas></div></div>
- <div class="card"><div class="card-pad section-title">Income vs budget vs actual</div><div class="chart-box"><canvas id="chart-bar"></canvas></div></div>
- </div>
-
- <div class="card">
- <div class="card-pad">
- <div class="page-header" style="margin-bottom:0.75rem">
- <div class="section-title" style="margin:0">This month's lines</div>
- <div class="flex-gap">
- <input type="search" id="dash-search" placeholder="Search..." value="${esc(state.search)}"
- style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:0.45rem 0.7rem;min-width:160px" />
- <button class="btn btn-ghost btn-sm" id="resync" title="Copy any new Plan lines into this open month">Update this month from Plan</button>
- </div>
- </div>
- <p class="dim mb-1"><strong>Update this month from Plan</strong> adds new Plan items into this month's snapshot if the month is still open. It will not change a closed month. <a href="#" data-goto-help="sync">Help</a></p>
- <div class="filters">
- ${["all", "under", "on_plan", "over", "unset"]
- .map(
- (f) =>
- `<button class="chip ${state.filter === f ? "active" : ""}" data-filter="${f}">${f === "all" ? "All" : statusLabel(f)}</button>`
- )
- .join("")}
- </div>
- </div>
- <div class="table-wrap">
- <table class="data">
- <thead><tr><th>Details</th><th>Category</th><th>Budget</th><th>Actual</th><th>Used</th><th>Status</th></tr></thead>
- <tbody>${rows || `<tr><td colspan="6" class="empty">No lines match.</td></tr>`}</tbody>
- </table>
- </div>
+ <div class="card card-pad dash-cta">
+   <div>
+     <strong>Spending lives on Transactions</strong>
+     <p class="dim" style="margin:0.25rem 0 0">Add to totals anytime, run Multi-Entry, edit or delete lines, and update this month from Plan — all on the Transactions tab.</p>
+   </div>
+   <button class="btn btn-primary" id="dash-cta-tx">Open Transactions</button>
  </div>`;
 }
 
 function bindDashboard() {
- bindMonthNav();
- app.querySelectorAll<HTMLButtonElement>("[data-filter]").forEach((b) => {
- b.addEventListener("click", () => {
- state.filter = b.dataset.filter || "all";
- render();
- });
- });
- app.querySelector("#dash-search")?.addEventListener("input", (e) => {
- state.search = (e.target as HTMLInputElement).value;
- const start = (e.target as HTMLInputElement).selectionStart;
- render();
- const el = app.querySelector<HTMLInputElement>("#dash-search");
- if (el) {
- el.focus();
- el.setSelectionRange(start, start);
- }
- });
- app.querySelector("#resync")?.addEventListener("click", async () => {
- try {
- await api.resyncMonth(state.year, state.month);
- toast("This month was updated from your Plan");
- await reloadDash();
- } catch (e) {
- toast(String(e), true);
- }
- });
- app.querySelectorAll<HTMLAnchorElement>("[data-goto-help]").forEach((a) => {
- a.addEventListener("click", (e) => {
- e.preventDefault();
- state.view = "help";
- state.helpQuery = a.dataset.gotoHelp || "";
- render();
- });
- });
- paintCharts();
+  bindMonthNav();
+  const goTx = (multi = false) => {
+    state.view = "transactions";
+    state.multiEntryOpen = multi;
+    if (multi) {
+      state.editActualId = null;
+    }
+    render();
+  };
+  app.querySelector("#dash-goto-tx")?.addEventListener("click", () => goTx(false));
+  app.querySelector("#dash-cta-tx")?.addEventListener("click", () => goTx(false));
+  app.querySelector("#dash-goto-multi")?.addEventListener("click", () => goTx(true));
+  paintCharts();
+}
+
+/* TRANSACTIONS — own tab: month lines, edit/delete, add-to-total, Multi-Entry, resync */
+function viewTransactions(): string {
+  const d = state.dash;
+  if (!d) return `<div class="empty">Loading...</div>`;
+  const open = d.month.status !== "reviewed";
+
+  let lines = d.lines;
+  if (state.filter !== "all") lines = lines.filter((l) => l.status === state.filter);
+  if (state.search.trim()) {
+    const q = state.search.toLowerCase();
+    lines = lines.filter(
+      (l) =>
+        l.name.toLowerCase().includes(q) ||
+        l.categoryName.toLowerCase().includes(q)
+    );
+  }
+
+  const rows = lines
+    .map((l) => {
+      const pct = l.pctUsed ?? 0;
+      const barPct = Math.min(pct, 100);
+      const progClass = l.status === "over" ? "over" : pct > 90 ? "warn" : "";
+      const editing = state.editActualId === l.budgetLineId;
+      return `
+ <tr class="${editing ? "row-editing" : ""}">
+   <td>
+     <div style="font-weight:700">${esc(l.name)}</div>
+     <div class="dim">${l.isFixed ? "Fixed bill" : "Flexible"}</div>
+   </td>
+   <td><span class="badge badge-cat" style="border-left:3px solid ${l.categoryColor}">${esc(l.categoryName)}</span></td>
+   <td class="mono">${money(l.budgetAmount)}</td>
+   <td class="mono">${
+     editing
+       ? `<div class="money-input"><span class="money-prefix">$</span>
+          <input type="number" step="0.01" id="edit-actual-amt" value="${amountInput(l.actualAmount ?? 0)}" style="max-width:7rem" /></div>`
+       : l.actualAmount != null
+         ? money(l.actualAmount)
+         : "—"
+   }</td>
+   <td>
+     <div class="progress ${progClass}" title="${pct.toFixed(0)}%"><span style="width:${barPct}%"></span></div>
+     <div class="dim mt-1">${l.actualAmount != null ? pct.toFixed(0) + "%" : "—"}</div>
+   </td>
+   <td><span class="badge badge-${l.status}">${statusLabel(l.status)}</span></td>
+   <td class="flex-gap">
+     ${
+       open
+         ? editing
+           ? `<button class="btn btn-primary btn-sm" data-save-actual="${l.budgetLineId}">Save</button>
+              <button class="btn btn-ghost btn-sm" id="edit-actual-cancel">Cancel</button>`
+           : `<button class="btn btn-ghost btn-sm" data-edit-actual="${l.budgetLineId}">Edit</button>
+              <button class="btn btn-danger btn-sm" data-del-ml="${l.budgetLineId}">Delete</button>`
+         : `<span class="dim">Closed</span>`
+     }
+   </td>
+ </tr>`;
+    })
+    .join("");
+
+  const multiCatOptions = state.categories.filter((c) =>
+    d.lines.some((l) => l.categoryId === c.id && !l.isFixed)
+  );
+  const multiCatId =
+    state.multiCatId && multiCatOptions.some((c) => c.id === state.multiCatId)
+      ? state.multiCatId
+      : multiCatOptions[0]?.id ?? null;
+  const linesInCat = d.lines.filter(
+    (l) => !l.isFixed && multiCatId != null && l.categoryId === multiCatId
+  );
+  const multiLineId =
+    state.multiLineId && linesInCat.some((l) => l.budgetLineId === state.multiLineId)
+      ? state.multiLineId
+      : linesInCat[0]?.budgetLineId ?? null;
+  const multiLine = d.lines.find((l) => l.budgetLineId === multiLineId);
+  const multiCatTotal = d.lines
+    .filter((l) => multiCatId != null && l.categoryId === multiCatId)
+    .reduce((s, l) => s + (l.actualAmount ?? 0), 0);
+
+  const multiPanel = state.multiEntryOpen
+    ? `
+ <div class="card card-pad mb-2 multi-panel">
+   <div class="page-header" style="margin-bottom:0.75rem">
+     <div>
+       <div class="section-title" style="margin:0">Multi-Entry</div>
+       <p class="dim" style="margin:0.25rem 0 0">Pick a category, add amounts one after another. Each amount adds to that line's total.</p>
+     </div>
+     <button class="btn btn-ghost btn-sm" id="multi-close">Done</button>
+   </div>
+   ${
+     !open
+       ? `<p class="dim">Month is closed. Reopen from History to add spending.</p>`
+       : `<form id="multi-form" class="form-row multi-form">
+     <div class="field">
+       <label>Category</label>
+       <select id="multi-cat">${
+         multiCatOptions.length
+           ? multiCatOptions
+               .map(
+                 (c) =>
+                   `<option value="${c.id}" ${c.id === multiCatId ? "selected" : ""}>${esc(c.name)}</option>`
+               )
+               .join("")
+           : `<option value="">No flexible categories this month</option>`
+       }</select>
+     </div>
+     <div class="field">
+       <label>Budget line</label>
+       <select id="multi-line" ${linesInCat.length ? "" : "disabled"}>
+         ${
+           linesInCat.length
+             ? linesInCat
+                 .map(
+                   (l) =>
+                     `<option value="${l.budgetLineId}" ${l.budgetLineId === multiLineId ? "selected" : ""}>${esc(l.name)} (${money(l.actualAmount ?? 0)})</option>`
+                 )
+                 .join("")
+             : `<option value="">No flexible lines in category</option>`
+         }
+       </select>
+     </div>
+     <div class="field">
+       <label>Add amount ($)</label>
+       <div class="money-input">
+         <span class="money-prefix">$</span>
+         <input type="number" step="0.01" min="0.01" id="multi-amt" required placeholder="20.00" autofocus />
+       </div>
+     </div>
+     <button class="btn btn-primary" type="submit" ${multiLineId ? "" : "disabled"}>Add to total</button>
+   </form>
+   <div class="multi-totals mt-1">
+     <span>Line total: <strong class="mono">${money(multiLine?.actualAmount ?? 0)}</strong></span>
+     <span>Category total: <strong class="mono">${money(multiCatTotal)}</strong></span>
+   </div>`
+   }
+ </div>`
+    : "";
+
+  const addPanel = open
+    ? `
+ <div class="card card-pad mb-2">
+   <div class="section-title">Add to a total</div>
+   <form id="add-total-form" class="form-row">
+     <div class="field">
+       <label>Line</label>
+       <select id="add-line" required>
+         ${d.lines
+           .filter((l) => !l.isFixed)
+           .map(
+             (l) =>
+               `<option value="${l.budgetLineId}">${esc(l.name)} · ${esc(l.categoryName)} (${money(l.actualAmount ?? 0)})</option>`
+           )
+           .join("")}
+       </select>
+     </div>
+     <div class="field">
+       <label>Amount to add ($)</label>
+       <div class="money-input">
+         <span class="money-prefix">$</span>
+         <input type="number" step="0.01" min="0.01" id="add-amt" required placeholder="20.00" />
+       </div>
+     </div>
+     <button class="btn btn-primary" type="submit">Add</button>
+   </form>
+   <p class="dim mt-1">Adds to the current actual (e.g. $100 + $20 → $120). Use Multi-Entry for several quick adds under one category.</p>
+ </div>`
+    : `<div class="info-callout mb-2">This month is closed. Reopen it from History to edit transactions.</div>`;
+
+  return `
+ <div class="page-header">
+   <div>
+     <h2>Transactions</h2>
+     <div class="sub">${monthName(state.month)} ${state.year} · ${open ? "Open — edit anytime" : "Closed"}</div>
+   </div>
+   <div class="flex-gap">
+     ${monthNavHtml()}
+     ${open ? `<button class="btn btn-primary btn-sm" id="btn-multi">${state.multiEntryOpen ? "Hide Multi-Entry" : "Multi-Entry"}</button>` : ""}
+     ${open ? `<button class="btn btn-ghost btn-sm" id="resync" title="Copy any new Plan lines into this open month">Update from Plan</button>` : ""}
+   </div>
+ </div>
+
+ ${multiPanel}
+ ${addPanel}
+
+ <div class="card">
+   <div class="card-pad">
+     <div class="page-header" style="margin-bottom:0.75rem">
+       <div class="section-title" style="margin:0">This month's entries</div>
+       <input type="search" id="tx-search" placeholder="Search..." value="${esc(state.search)}"
+         style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:0.45rem 0.7rem;min-width:160px" />
+     </div>
+     <div class="filters">
+       ${["all", "under", "on_plan", "over", "unset"]
+         .map(
+           (f) =>
+             `<button class="chip ${state.filter === f ? "active" : ""}" data-filter="${f}">${f === "all" ? "All" : statusLabel(f)}</button>`
+         )
+         .join("")}
+     </div>
+   </div>
+   <div class="table-wrap">
+     <table class="data">
+       <thead><tr><th>Details</th><th>Category</th><th>Budget</th><th>Actual</th><th>Used</th><th>Status</th><th></th></tr></thead>
+       <tbody>${rows || `<tr><td colspan="7" class="empty">No lines match. Update from Plan or add lines on Plan.</td></tr>`}</tbody>
+     </table>
+   </div>
+ </div>`;
+}
+
+function bindTransactions() {
+  bindMonthNav();
+
+  app.querySelectorAll<HTMLButtonElement>("[data-filter]").forEach((b) => {
+    b.addEventListener("click", () => {
+      state.filter = b.dataset.filter || "all";
+      render();
+    });
+  });
+
+  app.querySelector("#tx-search")?.addEventListener("input", (e) => {
+    state.search = (e.target as HTMLInputElement).value;
+    const start = (e.target as HTMLInputElement).selectionStart;
+    render();
+    const el = app.querySelector<HTMLInputElement>("#tx-search");
+    if (el) {
+      el.focus();
+      el.setSelectionRange(start, start);
+    }
+  });
+
+  app.querySelector("#btn-multi")?.addEventListener("click", () => {
+    state.multiEntryOpen = !state.multiEntryOpen;
+    state.editActualId = null;
+    render();
+    if (state.multiEntryOpen) {
+      app.querySelector<HTMLInputElement>("#multi-amt")?.focus();
+    }
+  });
+  app.querySelector("#multi-close")?.addEventListener("click", () => {
+    state.multiEntryOpen = false;
+    render();
+  });
+
+  app.querySelector("#multi-cat")?.addEventListener("change", (e) => {
+    state.multiCatId = Number((e.target as HTMLSelectElement).value);
+    state.multiLineId = null;
+    render();
+    app.querySelector<HTMLInputElement>("#multi-amt")?.focus();
+  });
+  app.querySelector("#multi-line")?.addEventListener("change", (e) => {
+    state.multiLineId = Number((e.target as HTMLSelectElement).value);
+    render();
+    app.querySelector<HTMLInputElement>("#multi-amt")?.focus();
+  });
+
+  app.querySelector("#multi-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const lineId = Number(
+      (app.querySelector("#multi-line") as HTMLSelectElement)?.value
+    );
+    const amt =
+      parseFloat((app.querySelector("#multi-amt") as HTMLInputElement).value) ||
+      0;
+    if (!lineId || amt <= 0) {
+      toast("Enter a positive amount", true);
+      return;
+    }
+    try {
+      const total = await api.addToActual(
+        state.year,
+        state.month,
+        lineId,
+        amt
+      );
+      const lineName =
+        state.dash?.lines.find((l) => l.budgetLineId === lineId)?.name ?? "Line";
+      state.multiEntryOpen = true;
+      state.multiLineId = lineId;
+      state.dash = await api.getDashboard(state.year, state.month);
+      state.toast = `${lineName} +${money(amt)} → ${money(total)}`;
+      state.toastError = false;
+      render();
+      if (toastTimer) window.clearTimeout(toastTimer);
+      toastTimer = window.setTimeout(() => {
+        state.toast = null;
+        render();
+        app.querySelector<HTMLInputElement>("#multi-amt")?.focus();
+      }, 3400);
+      app.querySelector<HTMLInputElement>("#multi-amt")?.focus();
+    } catch (err) {
+      toast(String(err), true);
+    }
+  });
+
+  app.querySelector("#add-total-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const lineId = Number(
+      (app.querySelector("#add-line") as HTMLSelectElement).value
+    );
+    const amt =
+      parseFloat((app.querySelector("#add-amt") as HTMLInputElement).value) || 0;
+    if (!lineId || amt <= 0) {
+      toast("Enter a positive amount", true);
+      return;
+    }
+    try {
+      const total = await api.addToActual(
+        state.year,
+        state.month,
+        lineId,
+        amt
+      );
+      const line = state.dash?.lines.find((l) => l.budgetLineId === lineId);
+      await reloadDash();
+      toast(`${line?.name ?? "Line"} +${money(amt)} → ${money(total)}`);
+      render();
+    } catch (err) {
+      toast(String(err), true);
+    }
+  });
+
+  app.querySelector("#resync")?.addEventListener("click", async () => {
+    try {
+      await api.resyncMonth(state.year, state.month);
+      toast("This month was updated from your Plan");
+      await reloadDash();
+    } catch (e) {
+      toast(String(e), true);
+    }
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-edit-actual]").forEach((b) => {
+    b.addEventListener("click", () => {
+      state.editActualId = Number(b.dataset.editActual);
+      state.multiEntryOpen = false;
+      render();
+      app.querySelector<HTMLInputElement>("#edit-actual-amt")?.focus();
+    });
+  });
+  app.querySelector("#edit-actual-cancel")?.addEventListener("click", () => {
+    state.editActualId = null;
+    render();
+  });
+  app.querySelectorAll<HTMLButtonElement>("[data-save-actual]").forEach((b) => {
+    b.addEventListener("click", async () => {
+      const id = Number(b.dataset.saveActual);
+      const raw = (
+        app.querySelector("#edit-actual-amt") as HTMLInputElement
+      )?.value;
+      const actualAmount = parseFloat(raw) || 0;
+      try {
+        await api.saveActuals(state.year, state.month, [
+          { budgetLineId: id, actualAmount, notes: null },
+        ]);
+        state.editActualId = null;
+        toast("Actual updated");
+        await reloadDash();
+      } catch (e) {
+        toast(String(e), true);
+      }
+    });
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-del-ml]").forEach((b) => {
+    b.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Remove this line from this month only? Your Plan template is not deleted."
+        )
+      )
+        return;
+      try {
+        await api.deleteMonthLine(
+          state.year,
+          state.month,
+          Number(b.dataset.delMl)
+        );
+        toast("Removed from this month");
+        await reloadDash();
+      } catch (e) {
+        toast(String(e), true);
+      }
+    });
+  });
 }
 
 /** High-contrast pie palette (hues spaced so neighbors stay distinct). */
@@ -806,90 +1310,198 @@ function assignContrastingPieColors(count: number): string[] {
 }
 
 function paintCharts() {
- const d = state.dash;
- if (!d) return;
- const pie = document.getElementById("chart-pie") as HTMLCanvasElement | null;
- const bar = document.getElementById("chart-bar") as HTMLCanvasElement | null;
- if (!pie || !bar) return;
+  const d = state.dash;
+  if (!d) return;
+  const pie = document.getElementById("chart-pie") as HTMLCanvasElement | null;
+  const bar = document.getElementById("chart-bar") as HTMLCanvasElement | null;
+  const catBar = document.getElementById(
+    "chart-catbar"
+  ) as HTMLCanvasElement | null;
+  const hist = document.getElementById("chart-hist") as HTMLCanvasElement | null;
+  if (!pie || !bar) return;
 
- const catMap = new Map<string, number>();
- for (const l of d.lines) {
- const amt = l.actualAmount ?? l.budgetAmount;
- catMap.set(l.categoryName, (catMap.get(l.categoryName) || 0) + amt);
- }
- // Largest slice first so the contrast algorithm is stable and readable
- const labels = [...catMap.keys()].sort(
-   (a, b) => (catMap.get(b) || 0) - (catMap.get(a) || 0)
- );
- const data = labels.map((k) => catMap.get(k)!);
- const colors = assignContrastingPieColors(labels.length);
- const muted =
- getComputedStyle(document.documentElement).getPropertyValue("--text-muted") ||
- "#9aa3c7";
- const border =
- getComputedStyle(document.documentElement).getPropertyValue("--bg-card")?.trim() ||
- "#1c2138";
+  const catMap = new Map<string, number>();
+  const catBudget = new Map<string, number>();
+  for (const l of d.lines) {
+    const amt = l.actualAmount ?? l.budgetAmount;
+    catMap.set(l.categoryName, (catMap.get(l.categoryName) || 0) + amt);
+    catBudget.set(
+      l.categoryName,
+      (catBudget.get(l.categoryName) || 0) + l.budgetAmount
+    );
+  }
+  const labels = [...catMap.keys()].sort(
+    (a, b) => (catMap.get(b) || 0) - (catMap.get(a) || 0)
+  );
+  const data = labels.map((k) => catMap.get(k)!);
+  const colors = assignContrastingPieColors(labels.length);
+  const muted =
+    getComputedStyle(document.documentElement).getPropertyValue("--text-muted") ||
+    "#9aa3c7";
+  const border =
+    getComputedStyle(document.documentElement)
+      .getPropertyValue("--bg-card")
+      ?.trim() || "#1c2138";
 
- pieChart?.destroy();
- pieChart = new Chart(pie, {
- type: "doughnut",
- data: {
- labels,
- datasets: [
-   {
-     data,
-     backgroundColor: colors,
-     borderWidth: 2,
-     borderColor: border,
-     hoverBorderWidth: 2,
-   },
- ],
- },
- options: {
- responsive: true,
- maintainAspectRatio: false,
- plugins: {
- legend: {
- position: "bottom",
- labels: { color: muted, boxWidth: 12 },
- },
- },
- },
- });
+  pieChart?.destroy();
+  pieChart = new Chart(pie, {
+    type: "doughnut",
+    data: {
+      labels,
+      datasets: [
+        {
+          data,
+          backgroundColor: colors,
+          borderWidth: 2,
+          borderColor: border,
+          hoverBorderWidth: 2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: { color: muted, boxWidth: 12, padding: 10 },
+        },
+      },
+    },
+  });
 
- const hasActuals = d.lines.some((l) => l.actualAmount != null);
- barChart?.destroy();
- barChart = new Chart(bar, {
- type: "bar",
- data: {
- labels: ["This month"],
- datasets: [
- { label: "Income", data: [d.month.netIncome], backgroundColor: "#10b981" },
- { label: "Budgeted", data: [d.budgetedTotal], backgroundColor: "#6366f1" },
- {
- label: "Actual",
- data: [hasActuals ? d.actualTotal : 0],
- backgroundColor: "#f43f5e",
- },
- ],
- },
- options: {
- responsive: true,
- maintainAspectRatio: false,
- scales: {
- x: { ticks: { color: muted }, grid: { display: false } },
- y: {
- beginAtZero: true,
- ticks: { color: muted },
- grid: { color: "rgba(128,128,128,0.15)" },
- },
- },
- plugins: { legend: { labels: { color: muted } } },
- },
- });
+  const hasActuals = d.lines.some((l) => l.actualAmount != null);
+  barChart?.destroy();
+  barChart = new Chart(bar, {
+    type: "bar",
+    data: {
+      labels: ["This month"],
+      datasets: [
+        {
+          label: "Income",
+          data: [d.month.netIncome],
+          backgroundColor: "#10b981",
+          borderRadius: 8,
+        },
+        {
+          label: "Budgeted",
+          data: [d.budgetedTotal],
+          backgroundColor: "#6366f1",
+          borderRadius: 8,
+        },
+        {
+          label: "Actual",
+          data: [hasActuals ? d.actualTotal : 0],
+          backgroundColor: "#f43f5e",
+          borderRadius: 8,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color: muted }, grid: { display: false } },
+        y: {
+          beginAtZero: true,
+          ticks: { color: muted },
+          grid: { color: "rgba(128,128,128,0.15)" },
+        },
+      },
+      plugins: { legend: { labels: { color: muted } } },
+    },
+  });
+
+  if (catBar) {
+    const catLabels = [...catBudget.keys()].sort(
+      (a, b) => (catBudget.get(b) || 0) - (catBudget.get(a) || 0)
+    );
+    const budgetData = catLabels.map((k) => catBudget.get(k) || 0);
+    const actualData = catLabels.map((k) => {
+      let sum = 0;
+      for (const l of d.lines) {
+        if (l.categoryName === k) sum += l.actualAmount ?? 0;
+      }
+      return sum;
+    });
+    catBarChart?.destroy();
+    catBarChart = new Chart(catBar, {
+      type: "bar",
+      data: {
+        labels: catLabels,
+        datasets: [
+          {
+            label: "Budget",
+            data: budgetData,
+            backgroundColor: "rgba(99, 102, 241, 0.45)",
+            borderRadius: 6,
+          },
+          {
+            label: "Actual",
+            data: actualData,
+            backgroundColor: "rgba(244, 63, 94, 0.75)",
+            borderRadius: 6,
+          },
+        ],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: { color: muted },
+            grid: { color: "rgba(128,128,128,0.12)" },
+          },
+          y: { ticks: { color: muted }, grid: { display: false } },
+        },
+        plugins: { legend: { labels: { color: muted, boxWidth: 12 } } },
+      },
+    });
+  }
+
+  if (hist) {
+    const closed = state.history
+      .filter((h) => h.status === "reviewed")
+      .slice(0, 6)
+      .reverse();
+    histChart?.destroy();
+    if (closed.length) {
+      histChart = new Chart(hist, {
+        type: "bar",
+        data: {
+          labels: closed.map(
+            (h) => `${monthName(h.month).slice(0, 3)} ${String(h.year).slice(2)}`
+          ),
+          datasets: [
+            {
+              label: "Net income",
+              data: closed.map((h) => h.netIncome),
+              backgroundColor: "rgba(16, 185, 129, 0.7)",
+              borderRadius: 6,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { color: muted }, grid: { display: false } },
+            y: {
+              beginAtZero: true,
+              ticks: { color: muted },
+              grid: { color: "rgba(128,128,128,0.12)" },
+            },
+          },
+          plugins: { legend: { display: false } },
+        },
+      });
+    }
+  }
 }
 
-/* CHECK-IN */
+/* CLOSE-MONTH (formerly Check-In) */
 function guideBox(title: string, html: string): string {
  return `<div class="guide-box mb-2"><div class="guide-title">${title}</div><div class="guide-body">${html}</div></div>`;
 }
@@ -912,7 +1524,7 @@ function viewCheckin(): string {
  if (state.checkinResult) {
  const r = state.checkinResult;
  return `
- ${checkinHeader("Check-In complete", `${monthName(state.month)} ${state.year}`)}
+ ${checkinHeader("Month closed", `${monthName(state.month)} ${state.year}`)}
  <div class="card scorecard">
  <div class="grade-ring" style="--pct:${Math.min(r.score, 100)}%"><span>${esc(r.grade)}</span></div>
  <p class="dim" style="max-width:420px;margin:0 auto">${esc(gradeExplain(r.grade))}</p>
@@ -949,13 +1561,13 @@ function viewCheckin(): string {
 
  if (state.checkinStep === 0) {
  return `
- ${checkinHeader("Monthly Check-In", `Closing out ${monthName(state.month)} ${state.year}`)}
+ ${checkinHeader("Close Month", `Verify ${monthName(state.month)} ${state.year} before closing`)}
  <div class="wizard-steps">${stepHtml}</div>
  ${guideBox(
  "What this step means",
- `You are recording how <strong>${monthName(state.month)}</strong> really went, so the app can compare it to your Plan.
- <br/><br/><strong>Net income</strong> is take-home pay for this month only (after taxes). If you got a bonus or missed a paycheck, change the number.
- <br/><br/>Notes are optional: for your own memory later (e.g. "vacation week").`
+ `Use Close-Month to <strong>verify</strong> income and spending, then lock the month with a grade.
+ <br/><br/>Log spending anytime on <strong>Transactions</strong>; this wizard is for a final check when you are ready.
+ <br/><br/><strong>Net income</strong> is take-home pay for this month only (after taxes). Notes are optional.`
  )}
  <div class="card card-pad stack" style="max-width:560px">
  <div class="field">
@@ -1046,8 +1658,8 @@ function viewCheckin(): string {
  <div class="wizard-steps">${stepHtml}</div>
  ${guideBox(
  "What this step means",
- `You're about to <strong>close</strong> this month. Totals include fixed bills (auto) plus the flexible amounts you entered.
- <br/><br/>Clicking <strong>Complete Check-In</strong> saves a grade and scorecard to History. You can still reopen the month later if you made a mistake.`
+ `You're about to <strong>close</strong> this month. Totals include fixed bills (auto) plus flexible amounts from Transactions and this review.
+ <br/><br/>Clicking <strong>Close month</strong> saves a grade and scorecard to History. You can still reopen later if you made a mistake.`
  )}
  <div class="grid-2">
  <div class="card card-pad">
@@ -1067,7 +1679,7 @@ function viewCheckin(): string {
  </div>
  <div class="flex-gap mt-2">
  <button class="btn btn-ghost" id="ci-back"><- Back</button>
- <button class="btn btn-success" id="ci-finish">Complete Check-In</button>
+ <button class="btn btn-success" id="ci-finish">Close month</button>
  </div>`;
 }
 
@@ -1202,7 +1814,7 @@ function viewPlan(): string {
 
  <div class="info-callout mb-2">
  The Plan is the master list used when a new month starts.
- Categories are either <strong>Fixed</strong> (same every month: skipped in Check-In) or <strong>Flexible</strong> (you enter actuals).
+ Categories are either <strong>Fixed</strong> (same every month: treated as on plan) or <strong>Flexible</strong> (you log actuals on Transactions / Close-Month).
  <a href="#" data-goto-help="categories-fixed">Help: Fixed vs Flexible</a>
  </div>
 
@@ -1415,14 +2027,14 @@ function viewHistory(): string {
  <div style="flex:1">
  <div style="font-weight:800">${monthName(h.month)} ${h.year}</div>
  <div class="dim">
- ${closed ? "Closed: Check-In finished" : "Open: still editable"}
+ ${closed ? "Closed" : "Open: still editable"}
  ${h.closedAt ? `  -  finished ${esc(h.closedAt.slice(0, 10))}` : ""}
  </div>
  ${
  h.grade
  ? `<div class="mt-1"><span class="grade-pill" title="${esc(gradeExplain(h.grade))}">${esc(h.grade)}</span>
  <span class="dim" style="margin-left:0.5rem">${esc(gradeExplain(h.grade))}</span></div>`
- : `<div class="dim mt-1">No grade yet (finish Check-In to score this month).</div>`
+ : `<div class="dim mt-1">No grade yet (use Close-Month to score this month).</div>`
  }
  </div>
  <div class="flex-gap" style="flex-direction:column;align-items:stretch">
@@ -1431,7 +2043,7 @@ function viewHistory(): string {
  ${
  closed
  ? `<button class="btn btn-ghost btn-sm" data-reopen="${h.year}-${h.month}"
- title="Unlock this month on the Dashboard so you can fix numbers, then run Check-In again">Reopen for editing</button>`
+ title="Unlock this month so you can fix numbers, then run Close-Month again">Reopen for editing</button>`
  : `<span class="dim" style="font-size:0.75rem;text-align:center">Already open</span>`
  }
  </div>
@@ -1443,16 +2055,16 @@ function viewHistory(): string {
  <div class="page-header">
  <div>
  <h2>History</h2>
- <div class="sub">Past months and Check-In grades</div>
+ <div class="sub">Past months and grades</div>
  </div>
  </div>
  <div class="info-callout mb-2">
  <strong>View on Dashboard</strong> only changes which month you're looking at (like the month selector).
- <strong>Reopen for editing</strong> unlocks a closed month and opens it on the Dashboard. Edit there, then run Check-In again when finished.
+ <strong>Reopen for editing</strong> unlocks a closed month. Edit on Transactions, then run Close-Month again when finished.
  <a href="#" data-goto-help="history">Full explanation in Help</a>
  </div>
  <div class="card">
- ${items || `<div class="empty">No months yet: open the Dashboard to create the current month, then use Check-In.</div>`}
+ ${items || `<div class="empty">No months yet: open the Dashboard to create the current month, then use Close-Month.</div>`}
  </div>`;
 }
 
@@ -1479,7 +2091,7 @@ function bindHistory() {
       const [y, m] = (b.dataset.reopen || "").split("-").map(Number);
       if (
         !confirm(
-          `Reopen ${monthName(m)} ${y}?\n\nThis unlocks the month so you can edit numbers on the Dashboard. The old grade is cleared. When you are done editing, open Check-In and run it again to save a new score.`
+          `Reopen ${monthName(m)} ${y}?\n\nThis unlocks the month so you can edit on Transactions. The old grade is cleared. When you are done, open Close-Month and run it again to save a new score.`
         )
       )
         return;
@@ -1487,11 +2099,11 @@ function bindHistory() {
         await api.reopenMonth(y, m);
         state.year = y;
         state.month = m;
-        state.view = "dashboard";
+        state.view = "transactions";
         state.checkinResult = null;
         await refreshAll();
         toast(
-          `${monthName(m)} ${y} is open on the Dashboard. Edit as needed, then run Check-In when finished.`
+          `${monthName(m)} ${y} is open. Edit on Transactions, then run Close-Month when finished.`
         );
         render();
       } catch (e) {

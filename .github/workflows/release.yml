@@ -35,9 +35,14 @@ jobs:
           releaseBody: |
             Offline monthly budget app — private, local, freeware (MIT).
 
-            **Installer:** run the setup (or MSI). Open the app from the Start menu when it finishes.
+            ### Download (pick one)
 
-            **Portable:** download `BudgetMaster9000.exe`, double-click it. Your database is created next to it on first run. Nothing else to install or copy.
+            | File | New install | Upgrade |
+            |------|-------------|---------|
+            | **Installer** (setup `.exe` or `.msi`) | Run it. Open from Start menu. | Run the new setup. Budget data stays in AppData — no file copying. |
+            | **Portable** (`BudgetMaster9000.exe`) | Save anywhere, double-click. | Replace the old `.exe` in the **same folder**. `bm9000.db` stays put. |
+
+            No accounts. No cloud. No manual database moves.
           releaseDraft: true
           prerelease: false
           args: --bundles nsis,msi
