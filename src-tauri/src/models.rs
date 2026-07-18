@@ -219,3 +219,15 @@ pub struct ActualExport {
     pub actual_amount: f64,
     pub notes: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCheck {
+    pub current_version: String,
+    pub latest_version: String,
+    pub update_available: bool,
+    pub release_url: String,
+    pub zip_asset_name: Option<String>,
+    pub checked: bool,
+    pub error: Option<String>,
+}

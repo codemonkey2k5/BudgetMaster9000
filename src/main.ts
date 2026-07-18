@@ -25,6 +25,7 @@ import {
  type MonthDashboard,
  type MonthInfo,
  type MonthLine,
+ type UpdateCheck,
 } from "./api";
 import { HELP_SECTIONS, searchHelp } from "./help";
 
@@ -68,14 +69,14 @@ interface State {
   editCategory: Category | null;
   /** Absolute-edit of a month line actual on Transactions */
   editActualId: number | null;
-  /** Multi-Entry panel open */
-  multiEntryOpen: boolean;
-  multiCatId: number | null;
-  multiLineId: number | null;
+  /** Sticky line selection for Add to a total */
+  addLineId: number | null;
   helpQuery: string;
   showCategoryNotice: boolean;
   toast: string | null;
   toastError: boolean;
+  appVersion: string;
+  update: UpdateCheck | null;
 }
 
 const state: State = {
@@ -97,13 +98,13 @@ const state: State = {
   editLine: null,
   editCategory: null,
   editActualId: null,
-  multiEntryOpen: false,
-  multiCatId: null,
-  multiLineId: null,
+  addLineId: null,
   helpQuery: "",
   showCategoryNotice: false,
   toast: null,
   toastError: false,
+  appVersion: "1.1.0",
+  update: null,
 };
 
 let pieChart: Chart | null = null;
@@ -265,7 +266,18 @@ async function runUiSelfTest(): Promise<void> {
  api.updateMonthMeta(y, m, 4800, "ui selftest", null)
  );
  const dash = await api.getDashboard(y, m);
- const actuals = dash.lines.map((l) => ({
+ const flex = dash.lines.find((l) => !l.isFixed && l.budgetLineId);
+ if (flex) {
+   await step("add_to_actual", () =>
+     api.addToActual(y, m, flex.budgetLineId, 20)
+   );
+   await step("add_to_actual_again", () =>
+     api.addToActual(y, m, flex.budgetLineId, 5)
+   );
+ }
+ await step("check_for_update", () => api.checkForUpdate());
+ const dash2 = await api.getDashboard(y, m);
+ const actuals = dash2.lines.map((l) => ({
  budgetLineId: l.budgetLineId,
  actualAmount: l.isFixed ? l.budgetAmount : l.budgetAmount * 0.95,
  notes: null as string | null,
@@ -339,6 +351,10 @@ async function boot() {
  }
  await refreshAll();
  render();
+ // Non-blocking: version banner / optional update notice
+ void refreshUpdateBanner().then(() => {
+   if (state.update?.updateAvailable) render();
+ });
  } catch (e) {
  app.innerHTML = `<div class="center-screen"><div class="card lock-card"><h2>Startup error</h2><p>${esc(String(e))}</p></div></div>`;
  }
@@ -498,8 +514,19 @@ function shell(content: string): string {
  ${nav("help", "?", "Help")}
  ${nav("settings", "S", "Settings")}
  <div class="sidebar-foot">
- <button class="btn btn-ghost btn-sm" id="btn-theme">${state.status?.theme === "light" ? "Dark mode" : "Light mode"}</button>
- ${state.status?.lockEnabled ? `<button class="btn btn-ghost btn-sm" id="btn-lock">Lock now</button>` : ""}
+   <div class="sidebar-version">
+     <div class="sidebar-version-label">v${esc(state.appVersion)}</div>
+     ${
+       state.update?.updateAvailable
+         ? `<button type="button" class="btn-update-avail" id="btn-download-update" title="Download update zip with upgrade instructions">
+              Update v${esc(state.update.latestVersion)} available
+            </button>`
+         : ""
+     }
+   </div>
+   <div class="sidebar-foot-line"></div>
+   <button class="btn btn-ghost btn-sm" id="btn-theme">${state.status?.theme === "light" ? "Dark mode" : "Light mode"}</button>
+   ${state.status?.lockEnabled ? `<button class="btn btn-ghost btn-sm" id="btn-lock">Lock now</button>` : ""}
  </div>
  </aside>
  <main class="main">
@@ -547,8 +574,7 @@ function bindShell() {
  seedCheckinActuals();
  }
  if (state.view !== "transactions") {
- state.editActualId = null;
- state.multiEntryOpen = false;
+   state.editActualId = null;
  }
  render();
  });
@@ -586,6 +612,37 @@ function bindShell() {
  if (state.status) state.status.needsCategoryReview = false;
  render();
  });
+ app.querySelector("#btn-download-update")?.addEventListener("click", async () => {
+   const btn = app.querySelector<HTMLButtonElement>("#btn-download-update");
+   if (btn) {
+     btn.disabled = true;
+     btn.textContent = "Downloading…";
+   }
+   try {
+     const path = await api.downloadUpdatePackage();
+     toast(`Update zip saved: ${path}`);
+   } catch (e) {
+     toast(String(e), true);
+   } finally {
+     if (btn) {
+       btn.disabled = false;
+       btn.textContent = state.update
+         ? `Update v${state.update.latestVersion} available`
+         : "Update available";
+     }
+   }
+ });
+}
+
+/** Background check — fails quietly when offline. */
+async function refreshUpdateBanner() {
+  try {
+    const info = await api.checkForUpdate();
+    state.appVersion = info.currentVersion || state.appVersion;
+    state.update = info;
+  } catch {
+    /* ignore network errors */
+  }
 }
 
 function render() {
@@ -725,8 +782,7 @@ function viewDashboard(): string {
      ${monthNavHtml()}
      ${
        open
-         ? `<button class="btn btn-primary btn-sm" id="dash-goto-tx">Log spending</button>
-            <button class="btn btn-ghost btn-sm" id="dash-goto-multi">Multi-Entry</button>`
+         ? `<button class="btn btn-primary btn-sm" id="dash-goto-tx">Log spending</button>`
          : `<button class="btn btn-ghost btn-sm" id="dash-goto-tx">View transactions</button>`
      }
    </div>
@@ -830,7 +886,7 @@ function viewDashboard(): string {
  <div class="card card-pad dash-cta">
    <div>
      <strong>Spending lives on Transactions</strong>
-     <p class="dim" style="margin:0.25rem 0 0">Add to totals anytime, run Multi-Entry, edit or delete lines, and update this month from Plan — all on the Transactions tab.</p>
+     <p class="dim" style="margin:0.25rem 0 0">Log spending on the Transactions tab: pick a category, add amounts anytime, edit or delete lines.</p>
    </div>
    <button class="btn btn-primary" id="dash-cta-tx">Open Transactions</button>
  </div>`;
@@ -838,21 +894,17 @@ function viewDashboard(): string {
 
 function bindDashboard() {
   bindMonthNav();
-  const goTx = (multi = false) => {
+  const goTx = () => {
     state.view = "transactions";
-    state.multiEntryOpen = multi;
-    if (multi) {
-      state.editActualId = null;
-    }
+    state.editActualId = null;
     render();
   };
-  app.querySelector("#dash-goto-tx")?.addEventListener("click", () => goTx(false));
-  app.querySelector("#dash-cta-tx")?.addEventListener("click", () => goTx(false));
-  app.querySelector("#dash-goto-multi")?.addEventListener("click", () => goTx(true));
+  app.querySelector("#dash-goto-tx")?.addEventListener("click", goTx);
+  app.querySelector("#dash-cta-tx")?.addEventListener("click", goTx);
   paintCharts();
 }
 
-/* TRANSACTIONS — own tab: month lines, edit/delete, add-to-total, Multi-Entry, resync */
+/* TRANSACTIONS — own tab: add-to-total (sticky category), full-height entries, edit/delete */
 function viewTransactions(): string {
   const d = state.dash;
   if (!d) return `<div class="empty">Loading...</div>`;
@@ -911,99 +963,33 @@ function viewTransactions(): string {
     })
     .join("");
 
-  const multiCatOptions = state.categories.filter((c) =>
-    d.lines.some((l) => l.categoryId === c.id && !l.isFixed)
-  );
-  const multiCatId =
-    state.multiCatId && multiCatOptions.some((c) => c.id === state.multiCatId)
-      ? state.multiCatId
-      : multiCatOptions[0]?.id ?? null;
-  const linesInCat = d.lines.filter(
-    (l) => !l.isFixed && multiCatId != null && l.categoryId === multiCatId
-  );
-  const multiLineId =
-    state.multiLineId && linesInCat.some((l) => l.budgetLineId === state.multiLineId)
-      ? state.multiLineId
-      : linesInCat[0]?.budgetLineId ?? null;
-  const multiLine = d.lines.find((l) => l.budgetLineId === multiLineId);
-  const multiCatTotal = d.lines
-    .filter((l) => multiCatId != null && l.categoryId === multiCatId)
-    .reduce((s, l) => s + (l.actualAmount ?? 0), 0);
-
-  const multiPanel = state.multiEntryOpen
-    ? `
- <div class="card card-pad mb-2 multi-panel">
-   <div class="page-header" style="margin-bottom:0.75rem">
-     <div>
-       <div class="section-title" style="margin:0">Multi-Entry</div>
-       <p class="dim" style="margin:0.25rem 0 0">Pick a category, add amounts one after another. Each amount adds to that line's total.</p>
-     </div>
-     <button class="btn btn-ghost btn-sm" id="multi-close">Done</button>
-   </div>
-   ${
-     !open
-       ? `<p class="dim">Month is closed. Reopen from History to add spending.</p>`
-       : `<form id="multi-form" class="form-row multi-form">
-     <div class="field">
-       <label>Category</label>
-       <select id="multi-cat">${
-         multiCatOptions.length
-           ? multiCatOptions
-               .map(
-                 (c) =>
-                   `<option value="${c.id}" ${c.id === multiCatId ? "selected" : ""}>${esc(c.name)}</option>`
-               )
-               .join("")
-           : `<option value="">No flexible categories this month</option>`
-       }</select>
-     </div>
-     <div class="field">
-       <label>Budget line</label>
-       <select id="multi-line" ${linesInCat.length ? "" : "disabled"}>
-         ${
-           linesInCat.length
-             ? linesInCat
-                 .map(
-                   (l) =>
-                     `<option value="${l.budgetLineId}" ${l.budgetLineId === multiLineId ? "selected" : ""}>${esc(l.name)} (${money(l.actualAmount ?? 0)})</option>`
-                 )
-                 .join("")
-             : `<option value="">No flexible lines in category</option>`
-         }
-       </select>
-     </div>
-     <div class="field">
-       <label>Add amount ($)</label>
-       <div class="money-input">
-         <span class="money-prefix">$</span>
-         <input type="number" step="0.01" min="0.01" id="multi-amt" required placeholder="20.00" autofocus />
-       </div>
-     </div>
-     <button class="btn btn-primary" type="submit" ${multiLineId ? "" : "disabled"}>Add to total</button>
-   </form>
-   <div class="multi-totals mt-1">
-     <span>Line total: <strong class="mono">${money(multiLine?.actualAmount ?? 0)}</strong></span>
-     <span>Category total: <strong class="mono">${money(multiCatTotal)}</strong></span>
-   </div>`
-   }
- </div>`
-    : "";
+  // Lines come from Plan (already on this month). Sticky selection for quick multi-submit.
+  const allLines = d.lines;
+  const addLineId =
+    state.addLineId != null &&
+    allLines.some((l) => l.budgetLineId === state.addLineId)
+      ? state.addLineId
+      : allLines[0]?.budgetLineId ?? null;
+  const selectedLine = allLines.find((l) => l.budgetLineId === addLineId);
 
   const addPanel = open
     ? `
- <div class="card card-pad mb-2">
+ <div class="card card-pad tx-add-panel">
    <div class="section-title">Add to a total</div>
    <form id="add-total-form" class="form-row">
-     <div class="field">
+     <div class="field" style="min-width:14rem;flex:1">
        <label>Line</label>
-       <select id="add-line" required>
-         ${d.lines
-           .filter((l) => !l.isFixed)
-           .map(
-             (l) =>
-               `<option value="${l.budgetLineId}">${esc(l.name)} · ${esc(l.categoryName)} (${money(l.actualAmount ?? 0)})</option>`
-           )
-           .join("")}
+       <select id="add-line" ${allLines.length ? "" : "disabled"}>
+         ${
+           allLines.length
+             ? allLines
+                 .map(
+                   (l) =>
+                     `<option value="${l.budgetLineId}" ${l.budgetLineId === addLineId ? "selected" : ""}>${esc(l.name)} · ${esc(l.categoryName)} (${money(l.actualAmount ?? 0)})</option>`
+                 )
+                 .join("")
+             : `<option value="">No lines this month — add them on Plan</option>`
+         }
        </select>
      </div>
      <div class="field">
@@ -1013,49 +999,49 @@ function viewTransactions(): string {
          <input type="number" step="0.01" min="0.01" id="add-amt" required placeholder="20.00" />
        </div>
      </div>
-     <button class="btn btn-primary" type="submit">Add</button>
+     <button class="btn btn-primary" type="submit" ${addLineId ? "" : "disabled"}>Submit</button>
    </form>
-   <p class="dim mt-1">Adds to the current actual (e.g. $100 + $20 → $120). Use Multi-Entry for several quick adds under one category.</p>
+   <p class="dim mt-1">
+     Lines are managed on <strong>Plan</strong>. Submit adds to the selected line's total
+     (e.g. ${money(selectedLine?.actualAmount ?? 0)} + amount). The line stays selected for the next entry.
+   </p>
  </div>`
-    : `<div class="info-callout mb-2">This month is closed. Reopen it from History to edit transactions.</div>`;
+    : `<div class="info-callout tx-add-panel">This month is closed. Reopen it from History to edit transactions.</div>`;
 
   return `
- <div class="page-header">
-   <div>
-     <h2>Transactions</h2>
-     <div class="sub">${monthName(state.month)} ${state.year} · ${open ? "Open — edit anytime" : "Closed"}</div>
-   </div>
-   <div class="flex-gap">
+ <div class="tx-page">
+   <div class="page-header tx-header">
+     <div>
+       <h2>Transactions</h2>
+       <div class="sub">${monthName(state.month)} ${state.year} · ${open ? "Open — edit anytime" : "Closed"}</div>
+     </div>
      ${monthNavHtml()}
-     ${open ? `<button class="btn btn-primary btn-sm" id="btn-multi">${state.multiEntryOpen ? "Hide Multi-Entry" : "Multi-Entry"}</button>` : ""}
-     ${open ? `<button class="btn btn-ghost btn-sm" id="resync" title="Copy any new Plan lines into this open month">Update from Plan</button>` : ""}
    </div>
- </div>
 
- ${multiPanel}
- ${addPanel}
+   ${addPanel}
 
- <div class="card">
-   <div class="card-pad">
-     <div class="page-header" style="margin-bottom:0.75rem">
-       <div class="section-title" style="margin:0">This month's entries</div>
-       <input type="search" id="tx-search" placeholder="Search..." value="${esc(state.search)}"
-         style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:0.45rem 0.7rem;min-width:160px" />
+   <div class="card tx-entries">
+     <div class="card-pad tx-entries-toolbar">
+       <div class="page-header" style="margin-bottom:0.75rem">
+         <div class="section-title" style="margin:0">This month's entries</div>
+         <input type="search" id="tx-search" placeholder="Search..." value="${esc(state.search)}"
+           style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:0.45rem 0.7rem;min-width:160px" />
+       </div>
+       <div class="filters">
+         ${["all", "under", "on_plan", "over", "unset"]
+           .map(
+             (f) =>
+               `<button class="chip ${state.filter === f ? "active" : ""}" data-filter="${f}">${f === "all" ? "All" : statusLabel(f)}</button>`
+           )
+           .join("")}
+       </div>
      </div>
-     <div class="filters">
-       ${["all", "under", "on_plan", "over", "unset"]
-         .map(
-           (f) =>
-             `<button class="chip ${state.filter === f ? "active" : ""}" data-filter="${f}">${f === "all" ? "All" : statusLabel(f)}</button>`
-         )
-         .join("")}
+     <div class="table-wrap tx-table-wrap">
+       <table class="data">
+         <thead><tr><th>Details</th><th>Category</th><th>Budget</th><th>Actual</th><th>Used</th><th>Status</th><th></th></tr></thead>
+         <tbody>${rows || `<tr><td colspan="7" class="empty">No lines match. Change the Plan, or wait for it to sync into this open month.</td></tr>`}</tbody>
+       </table>
      </div>
-   </div>
-   <div class="table-wrap">
-     <table class="data">
-       <thead><tr><th>Details</th><th>Category</th><th>Budget</th><th>Actual</th><th>Used</th><th>Status</th><th></th></tr></thead>
-       <tbody>${rows || `<tr><td colspan="7" class="empty">No lines match. Update from Plan or add lines on Plan.</td></tr>`}</tbody>
-     </table>
    </div>
  </div>`;
 }
@@ -1081,39 +1067,24 @@ function bindTransactions() {
     }
   });
 
-  app.querySelector("#btn-multi")?.addEventListener("click", () => {
-    state.multiEntryOpen = !state.multiEntryOpen;
-    state.editActualId = null;
+  app.querySelector("#add-line")?.addEventListener("change", (e) => {
+    state.addLineId = Number((e.target as HTMLSelectElement).value);
+    const amt = app.querySelector<HTMLInputElement>("#add-amt")?.value ?? "";
     render();
-    if (state.multiEntryOpen) {
-      app.querySelector<HTMLInputElement>("#multi-amt")?.focus();
+    const el = app.querySelector<HTMLInputElement>("#add-amt");
+    if (el) {
+      el.value = amt;
+      el.focus();
     }
   });
-  app.querySelector("#multi-close")?.addEventListener("click", () => {
-    state.multiEntryOpen = false;
-    render();
-  });
 
-  app.querySelector("#multi-cat")?.addEventListener("change", (e) => {
-    state.multiCatId = Number((e.target as HTMLSelectElement).value);
-    state.multiLineId = null;
-    render();
-    app.querySelector<HTMLInputElement>("#multi-amt")?.focus();
-  });
-  app.querySelector("#multi-line")?.addEventListener("change", (e) => {
-    state.multiLineId = Number((e.target as HTMLSelectElement).value);
-    render();
-    app.querySelector<HTMLInputElement>("#multi-amt")?.focus();
-  });
-
-  app.querySelector("#multi-form")?.addEventListener("submit", async (e) => {
+  app.querySelector("#add-total-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const lineId = Number(
-      (app.querySelector("#multi-line") as HTMLSelectElement)?.value
-    );
-    const amt =
-      parseFloat((app.querySelector("#multi-amt") as HTMLInputElement).value) ||
-      0;
+    const lineEl = app.querySelector("#add-line") as HTMLSelectElement | null;
+    const amtEl = app.querySelector("#add-amt") as HTMLInputElement | null;
+    if (lineEl) state.addLineId = Number(lineEl.value);
+    const lineId = state.addLineId ?? 0;
+    const amt = parseFloat(amtEl?.value || "0") || 0;
     if (!lineId || amt <= 0) {
       toast("Enter a positive amount", true);
       return;
@@ -1127,8 +1098,8 @@ function bindTransactions() {
       );
       const lineName =
         state.dash?.lines.find((l) => l.budgetLineId === lineId)?.name ?? "Line";
-      state.multiEntryOpen = true;
-      state.multiLineId = lineId;
+      // Keep the same line selected for the next amount
+      state.addLineId = lineId;
       state.dash = await api.getDashboard(state.year, state.month);
       state.toast = `${lineName} +${money(amt)} → ${money(total)}`;
       state.toastError = false;
@@ -1136,56 +1107,22 @@ function bindTransactions() {
       if (toastTimer) window.clearTimeout(toastTimer);
       toastTimer = window.setTimeout(() => {
         state.toast = null;
-        render();
-        app.querySelector<HTMLInputElement>("#multi-amt")?.focus();
+        const t = app.querySelector(".toast");
+        t?.remove();
       }, 3400);
-      app.querySelector<HTMLInputElement>("#multi-amt")?.focus();
+      const next = app.querySelector<HTMLInputElement>("#add-amt");
+      if (next) {
+        next.value = "";
+        next.focus();
+      }
     } catch (err) {
       toast(String(err), true);
-    }
-  });
-
-  app.querySelector("#add-total-form")?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const lineId = Number(
-      (app.querySelector("#add-line") as HTMLSelectElement).value
-    );
-    const amt =
-      parseFloat((app.querySelector("#add-amt") as HTMLInputElement).value) || 0;
-    if (!lineId || amt <= 0) {
-      toast("Enter a positive amount", true);
-      return;
-    }
-    try {
-      const total = await api.addToActual(
-        state.year,
-        state.month,
-        lineId,
-        amt
-      );
-      const line = state.dash?.lines.find((l) => l.budgetLineId === lineId);
-      await reloadDash();
-      toast(`${line?.name ?? "Line"} +${money(amt)} → ${money(total)}`);
-      render();
-    } catch (err) {
-      toast(String(err), true);
-    }
-  });
-
-  app.querySelector("#resync")?.addEventListener("click", async () => {
-    try {
-      await api.resyncMonth(state.year, state.month);
-      toast("This month was updated from your Plan");
-      await reloadDash();
-    } catch (e) {
-      toast(String(e), true);
     }
   });
 
   app.querySelectorAll<HTMLButtonElement>("[data-edit-actual]").forEach((b) => {
     b.addEventListener("click", () => {
       state.editActualId = Number(b.dataset.editActual);
-      state.multiEntryOpen = false;
       render();
       app.querySelector<HTMLInputElement>("#edit-actual-amt")?.focus();
     });
@@ -1235,6 +1172,19 @@ function bindTransactions() {
       }
     });
   });
+}
+
+/** After Plan changes, push into the current open month automatically (no extra button). */
+async function syncOpenMonthFromPlan(quiet = false): Promise<void> {
+  try {
+    await api.resyncMonth(state.year, state.month);
+    state.dash = await api.getDashboard(state.year, state.month);
+    if (!quiet) {
+      // light toast only when it matters
+    }
+  } catch {
+    /* closed month or lock — ignore */
+  }
 }
 
 /** High-contrast pie palette (hues spaced so neighbors stay distinct). */
@@ -1815,7 +1765,7 @@ function viewPlan(): string {
  <div class="info-callout mb-2">
  The Plan is the master list used when a new month starts.
  Categories are either <strong>Fixed</strong> (same every month: treated as on plan) or <strong>Flexible</strong> (you log actuals on Transactions / Close-Month).
- <a href="#" data-goto-help="categories-fixed">Help: Fixed vs Flexible</a>
+ <a href="#" data-goto-help="plan">Help: Plan and categories</a>
  </div>
 
  <div class="card card-pad mb-2">
@@ -1937,12 +1887,12 @@ function bindPlan() {
  await api.upsertBudgetLine(payload);
  state.editLine = null;
  await refreshAll();
- try {
- await api.resyncMonth(state.year, state.month);
- } catch {
- /* closed month */
- }
- toast(payload.id ? "Line updated" : "Line added");
+ await syncOpenMonthFromPlan();
+ toast(
+   payload.id
+     ? "Line updated — open month synced from Plan"
+     : "Line added — open month synced from Plan"
+ );
  render();
  } catch (err) {
  toast(String(err), true);
@@ -1965,7 +1915,8 @@ function bindPlan() {
  try {
  await api.deleteBudgetLine(Number(b.dataset.del));
  await refreshAll();
- toast("Deleted");
+ await syncOpenMonthFromPlan();
+ toast("Deleted — open month synced from Plan");
  render();
  } catch (e) {
  toast(String(e), true);
@@ -1986,6 +1937,7 @@ function bindPlan() {
  });
  state.editCategory = null;
  await refreshAll();
+ await syncOpenMonthFromPlan();
  toast(idRaw ? "Category updated" : "Category added");
  render();
  } catch (err) {
@@ -2125,7 +2077,7 @@ function viewHelp(): string {
  </div>
  <div class="field mb-2" style="max-width:480px">
  <label>Search help</label>
- <input type="search" id="help-q" placeholder="e.g. fixed, check-in, grade, sync..." value="${esc(state.helpQuery)}" />
+ <input type="search" id="help-q" placeholder="e.g. transactions, plan, grade, backup..." value="${esc(state.helpQuery)}" />
  </div>
  <div class="help-list">
  ${
@@ -2226,8 +2178,19 @@ function viewSettings(): string {
     </div>
     <div class="card card-pad">
       <div class="section-title">About</div>
-      <p>Budget Master 9000 v1.0: freeware, offline, private.</p>
-      <p class="dim">MIT License. See Help for how everything works, including Security and privacy.</p>
+      <p><strong>Budget Master 9000 v${esc(state.appVersion)}</strong> — freeware, offline, private.</p>
+      <ul class="tips-list" style="margin-top:0.5rem">
+        <li><strong>Dashboard</strong> — month command center (KPIs, charts, pace, attention).</li>
+        <li><strong>Transactions</strong> — log spending anytime; submit amounts to Plan lines; edit/delete.</li>
+        <li><strong>Close-Month</strong> — verify numbers when ready, then close with a grade.</li>
+        <li><strong>Plan</strong> — recurring template; open months sync automatically when you change it.</li>
+      </ul>
+      <p class="dim mt-1">MIT License. Local SQLite only — no cloud, no accounts, no telemetry. See Help for security notes.</p>
+      ${
+        state.update?.updateAvailable
+          ? `<p class="mt-1"><button type="button" class="btn btn-primary btn-sm" id="settings-download-update">Download update v${esc(state.update.latestVersion)}</button></p>`
+          : `<p class="dim mt-1">Version is also shown in the left menu. Optional update checks use GitHub when online.</p>`
+      }
     </div>`;
 }
 
@@ -2373,6 +2336,14 @@ function bindSettings() {
       // render() also guards on !hasData so toasts cannot dump us on Dashboard.
       renderOnboard();
       return;
+    } catch (e) {
+      toast(String(e), true);
+    }
+  });
+  app.querySelector("#settings-download-update")?.addEventListener("click", async () => {
+    try {
+      const path = await api.downloadUpdatePackage();
+      toast(`Update zip saved: ${path}`);
     } catch (e) {
       toast(String(e), true);
     }

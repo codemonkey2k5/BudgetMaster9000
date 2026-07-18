@@ -116,6 +116,16 @@ export interface CheckInResult {
   counts: StatusCounts;
 }
 
+export interface UpdateCheck {
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  releaseUrl: string;
+  zipAssetName: string | null;
+  checked: boolean;
+  error: string | null;
+}
+
 export const api = {
   getStatus: () => invoke<AppStatus>("get_status"),
   unlock: (password: string) => invoke<boolean>("unlock", { password }),
@@ -197,6 +207,8 @@ export const api = {
     invoke<string>("report_ui_selftest", { ok, report }),
   clearAllData: (confirmPhrase: string) =>
     invoke<void>("clear_all_data", { confirmPhrase }),
+  checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),
+  downloadUpdatePackage: () => invoke<string>("download_update_package"),
 };
 
 export function money(n: number): string {

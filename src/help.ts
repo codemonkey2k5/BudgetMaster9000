@@ -1,135 +1,148 @@
-/** Searchable in-app help content for beginners. Use plain ASCII only. */
+/** Searchable in-app help for first-time users. Plain language only. */
 
 export interface HelpSection {
   id: string;
   title: string;
   tags: string[];
-  /** HTML body with <p>, <ul>, <li>, <strong>, <code>, <br/> only. */
+  /** HTML body with <p>, <ul>, <li>, <ol>, <strong>, <code>, <br/> only. */
   body: string;
 }
 
 export const HELP_SECTIONS: HelpSection[] = [
   {
     id: "overview",
-    title: "What is Budget Master 9000?",
-    tags: ["start", "beginner", "overview"],
+    title: "Getting started",
+    tags: ["start", "beginner", "overview", "first"],
     body: `
-<p>This app helps you see how your month is going compared to a simple plan.</p>
+<p>Budget Master 9000 is a private desktop app for planning a monthly budget and tracking what you actually spend. Everything stays on your computer—no account, no cloud, no ads.</p>
+<p>A simple monthly rhythm:</p>
+<ol>
+<li>Set your take-home pay under <strong>Settings</strong>.</li>
+<li>Build your recurring budget under <strong>Plan</strong> (rent, groceries, subscriptions, and so on).</li>
+<li>During the month, record spending under <strong>Transactions</strong>.</li>
+<li>Watch the big picture on the <strong>Dashboard</strong>.</li>
+<li>When the month is over, use <strong>Close-Month</strong> to verify totals and save a grade to <strong>History</strong>.</li>
+</ol>
+<p>On first launch you can start blank, load demo data, or import a backup.</p>`,
+  },
+  {
+    id: "dashboard",
+    title: "Dashboard",
+    tags: ["dashboard", "charts", "health", "overview", "month"],
+    body: `
+<p>The Dashboard is your month at a glance for the month shown at the top (use the arrows to change months).</p>
 <ul>
-<li><strong>Plan:</strong> your recurring budget template (what you expect every month).</li>
-<li><strong>Dashboard:</strong> one month at a time: planned amounts vs what you actually spent.</li>
-<li><strong>Check-In:</strong> once a month, enter flexible spending and get a scorecard.</li>
-<li><strong>History:</strong> past months you already closed, with grades.</li>
+<li><strong>Income, budgeted, actual, variance, and remaining cash</strong> summarize how the month is going.</li>
+<li><strong>Charts</strong> show spending by category and how income compares to budget and actual.</li>
+<li><strong>Pace and runway</strong> estimate whether you are ahead or behind a steady monthly pace, and how much cash per remaining day you have left.</li>
+<li><strong>Needs attention / on track</strong> highlight lines that are over or under plan.</li>
 </ul>
-<p>Your data stays on this computer. There is no cloud account.</p>`,
+<p>To record spending, open <strong>Transactions</strong>. To finish the month, open <strong>Close-Month</strong>.</p>`,
   },
   {
-    id: "plan-vs-dashboard",
-    title: "Why Plan and Dashboard look different",
-    tags: ["plan", "dashboard", "sync", "month", "snapshot"],
+    id: "plan",
+    title: "Plan",
+    tags: ["plan", "budget", "recurring", "template", "lines", "categories"],
     body: `
-<p>The <strong>Plan</strong> is your master list of recurring costs (mortgage, groceries, Netflix, and so on).</p>
-<p>When you open a month (for example June), the app takes a <strong>snapshot</strong> of the Plan for that month. That snapshot is what the Dashboard shows.</p>
-<p>That way, if you change next month's Plan later, June's history stays accurate.</p>
-<p>If you add or change lines on the Plan and want the <em>current open month</em> to pick them up, use <strong>Update this month from Plan</strong>. Closed (reviewed) months are not changed.</p>`,
-  },
-  {
-    id: "sync",
-    title: 'What "Update this month from Plan" does',
-    tags: ["sync", "dashboard", "plan"],
-    body: `
-<p>It copies any <em>new</em> Plan lines into the month you are viewing (if that month is still open).</p>
-<p>It does <strong>not</strong> rewrite a month you already finished with Check-In.</p>
-<p>Use it after you add something new on the Plan (like a new subscription) and you want it to appear on this month's Dashboard.</p>`,
-  },
-  {
-    id: "categories-fixed",
-    title: "Categories: Fixed vs Flexible",
-    tags: ["category", "categories", "fixed", "flexible", "bills"],
-    body: `
-<p>Each category is either:</p>
+<p>The Plan is your list of recurring budget items—what you expect every month.</p>
+<p>For each item, enter a name, category, amount, and how often it occurs (weekly, monthly, or yearly). The app converts everything to a monthly total for you.</p>
+<p><strong>Categories</strong> group similar items and mark each group as:</p>
 <ul>
-<li><strong>Fixed:</strong> same every month (rent, insurance, subscriptions). Check-In skips these; they are assumed "on plan."</li>
-<li><strong>Flexible:</strong> amounts change (food, fun, charging). Check-In asks you for actuals.</li>
+<li><strong>Fixed</strong> — usually the same amount (housing, insurance, many subscriptions).</li>
+<li><strong>Flexible</strong> — amounts that change (food, entertainment, gas).</li>
 </ul>
-<p>When you create or edit a category, choose Fixed or Flexible there. Every budget line in that category follows that setting.</p>
-<p>If you imported old data, review your categories once and mark bill categories as Fixed.</p>`,
+<p>When you change the Plan, the current open month is updated automatically so new or renamed items appear where you track spending. Months you already closed keep their original numbers.</p>`,
+  },
+  {
+    id: "transactions",
+    title: "Transactions",
+    tags: ["transactions", "spending", "actuals", "submit", "log"],
+    body: `
+<p>Use Transactions to record what you spent during the month you have selected.</p>
+<p><strong>Add to a total</strong></p>
+<ol>
+<li>Choose the budget item from the <strong>Line</strong> list.</li>
+<li>Enter the amount you spent.</li>
+<li>Click <strong>Submit</strong>.</li>
+</ol>
+<p>Each submission adds to that item’s total for the month. For example, if groceries already show $100 and you submit $20, the total becomes $120. The same line stays selected so you can enter several purchases in a row.</p>
+<p>In the table you can <strong>Edit</strong> a total to set an exact amount, or <strong>Delete</strong> an item from this month only if you do not want it counted here.</p>
+<p>Switch months with the arrows at the top if you need to correct an earlier open month.</p>`,
   },
   {
     id: "checkin",
-    title: "Monthly Check-In (step by step)",
-    tags: ["check-in", "checkin", "actuals", "grade"],
+    title: "Close-Month",
+    tags: ["close-month", "close", "check-in", "checkin", "grade", "finish"],
     body: `
-<p><strong>Step 1: Income</strong></p>
-<p>Confirm your take-home pay for this month. Optionally add a short note (bonus, unpaid time off, etc.).</p>
-<p><strong>Step 2: Flexible spending</strong></p>
-<p>Only lines in Flexible categories appear. Enter what you actually spent. Numbers start at your Plan amount. Change only what was different.</p>
-<p><strong>Step 3: Review and finish</strong></p>
-<p>See totals, then complete Check-In. The app grades the month and saves it to History.</p>
-<p>You can reopen a finished month later if you need to fix a number. After reopening, make your edits on the Dashboard, then run Check-In again when you are done.</p>`,
+<p>Close-Month is the guided finish for a month. Use it when you are ready to lock numbers and save a score—not necessarily on the last calendar day, but when you are done adjusting.</p>
+<p><strong>Step 1 — Income</strong><br/>Confirm take-home pay for that month. Add an optional note if something unusual happened.</p>
+<p><strong>Step 2 — Flexible spending</strong><br/>Review items whose amounts can change. Fixed bills are already filled from your plan. Flexible amounts start from what you already recorded; change any that still need fixing.</p>
+<p><strong>Step 3 — Review and finish</strong><br/>Check the totals, then close the month. You get a letter grade and short notes about what went well and what needs attention. That result is saved under History.</p>
+<p>If you find a mistake later, reopen the month from History, fix it on Transactions or elsewhere, and run Close-Month again.</p>`,
   },
   {
     id: "grades",
-    title: "What the letter grade means",
-    tags: ["grade", "history", "score", "A", "B", "C"],
+    title: "Letter grades",
+    tags: ["grade", "score", "A", "B", "C", "scorecard"],
     body: `
-<p>After Check-In you get a letter grade (A, B+, B, and so on). It blends:</p>
+<p>After you close a month you receive a letter grade (A, B+, B, and so on). It combines:</p>
 <ul>
-<li>How many dollars stayed on plan (weighted by size of each line), and</li>
-<li>Your savings rate (income minus actual spending).</li>
+<li>How closely actual spending matched your plan (larger items count more), and</li>
+<li>Your savings rate (income minus what you spent).</li>
 </ul>
-<p><strong>A</strong> = excellent. <strong>B</strong> range = good. <strong>C</strong> = mixed. <strong>D/F</strong> = needs a reset.</p>
-<p>The scorecard also lists wins and things that need attention in plain language.</p>`,
+<p><strong>A</strong> means an excellent month. <strong>B</strong> range means solid. <strong>C</strong> means mixed results. <strong>D</strong> or <strong>F</strong> means the month was far off plan—use the tips on the scorecard when you plan the next month.</p>`,
   },
   {
     id: "history",
-    title: "History: View month vs Reopen",
-    tags: ["history", "reopen", "open", "reviewed"],
+    title: "History",
+    tags: ["history", "past", "reopen", "closed", "reviewed"],
     body: `
-<p><strong>View on Dashboard:</strong> jumps the Dashboard month selector to that month so you can look at the numbers. Same as changing the month on the Dashboard. Safe; does not change data.</p>
-<p><strong>Reopen for editing:</strong> only for months marked Reviewed. Unlocks the month and opens it on the Dashboard so you can change numbers. When your edits are done, go to <strong>Check-In</strong> and run it again to save a new grade.</p>
-<p>Why both? Viewing is for looking. Reopening is for fixing a closed month.</p>`,
+<p>History lists months the app knows about, with status and grade when available.</p>
+<ul>
+<li><strong>View on Dashboard</strong> — jump to that month to look at charts and totals. This does not change your data.</li>
+<li><strong>Reopen for editing</strong> — unlock a closed month so you can correct numbers. When you are finished, run Close-Month again to save a new grade.</li>
+</ul>`,
   },
   {
     id: "income",
     title: "Income settings",
-    tags: ["income", "settings", "net"],
+    tags: ["income", "settings", "net", "salary", "pay"],
     body: `
-<p>Only <strong>Net monthly</strong> drives the Dashboard math (take-home pay).</p>
-<p>Other fields (annual, tax %, bi-weekly) are optional notes/helpers. Edit them under Settings.</p>`,
+<p>Open <strong>Settings</strong> to set your income. Only <strong>Net monthly</strong> (take-home pay) drives the Dashboard math.</p>
+<p>Annual salary, tax %, and bi-weekly pay are optional helpers for your own notes. They do not replace net monthly.</p>`,
   },
   {
     id: "import-export",
-    title: "Import, export, backups, and clearing data",
+    title: "Backups, import, and clearing data",
     tags: ["import", "export", "backup", "json", "delete", "clear"],
     body: `
-<p>Use Settings, then Export JSON to save a backup file.</p>
-<p>Import can load that backup or an older BudgetMaster <code>data.json</code> file.</p>
-<p>After importing old data, you will see a short reminder to review which categories are Fixed vs Flexible.</p>
-<p><strong>Clear all budget data</strong> (under Settings) permanently erases plans, months, history, and income from this app's database. You must type <code>DELETE DATA</code> to confirm. There is no undo. If you do not have a backup file, the data cannot be recovered.</p>`,
+<p>Under Settings you can <strong>export</strong> a full backup as a JSON file. Store that file somewhere safe—it can restore your plan, months, and history.</p>
+<p><strong>Import</strong> loads a backup you exported earlier, or an older Budget Master data file if you have one.</p>
+<p><strong>Clear all budget data</strong> permanently erases your plan, months, history, and income from this app. You must type <code>DELETE DATA</code> to confirm. There is no undo unless you still have a backup file.</p>`,
+  },
+  {
+    id: "install-upgrade",
+    title: "Installing and upgrading",
+    tags: ["install", "upgrade", "portable", "installer", "update", "version"],
+    body: `
+<p>There are two ways to run Budget Master 9000:</p>
+<ul>
+<li><strong>Installer</strong> — run the setup program. Open the app from the Start menu or desktop shortcut. Your data is stored in your Windows user folder so upgrades do not require moving files.</li>
+<li><strong>Portable</strong> — a single <code>BudgetMaster9000.exe</code> you can put anywhere. Double-click to run. Your database file is created next to the program.</li>
+</ul>
+<p><strong>Upgrading the installer:</strong> download the new setup and run it. Your budget stays in place automatically.</p>
+<p><strong>Upgrading portable:</strong> download the new program file and replace the old one in the same folder. Do not move or rename your database file.</p>
+<p>Your version number appears at the bottom of the left menu. If a newer release is available online, you may see an update notice there. Click it to download a package that includes short upgrade instructions.</p>`,
   },
   {
     id: "security",
-    title: "Security and privacy",
-    tags: ["password", "lock", "security", "privacy", "encryption", "local", "offline"],
+    title: "Privacy and security",
+    tags: ["password", "lock", "security", "privacy", "local", "offline"],
     body: `
-<p><strong>Privacy first</strong></p>
-<p>Budget Master 9000 is built to keep money data on your machine. There is no account sign-in, no cloud sync, and no advertising trackers in the app. Your numbers are not sent to a server for analysis.</p>
-<p><strong>Where data lives</strong></p>
-<p>All budget information is stored in a local database file on this computer. If you use the portable download, that file is created next to the app automatically. If someone can copy that file and open the app without App Lock, they can see your data.</p>
-<p><strong>App Lock</strong></p>
-<p>Optional App Lock asks for a passphrase when you open the app. It is meant to stop casual snooping on a shared PC (family, office). It is not the same as bank-level security. Choose a strong passphrase you will remember. There is no password reset by email. If you forget it, you need a backup you exported earlier, or you may lose access to locked data.</p>
-<p><strong>What App Lock does not replace</strong></p>
-<ul>
-<li>Full-disk encryption such as BitLocker on Windows laptops</li>
-<li>A good device password or Windows Hello</li>
-<li>Safe storage of exported JSON backups (treat them like bank statements)</li>
-<li>Protection against malware already running as you</li>
-</ul>
-<p><strong>Backups and clearing data</strong></p>
-<p>Export backups before major changes. Clearing the database is permanent without a backup. Do not share backup files on public drives or chat apps unless they are protected.</p>
-<p><strong>Updates and freeware</strong></p>
-<p>Download the app only from sources you trust (for example your own GitHub release). The project is offline-first freeware: your privacy is part of the product, not a paid add-on.</p>`,
+<p>Budget Master 9000 is built to keep your budget on this computer. There is no sign-in account, no cloud sync, and no advertising trackers. Your spending numbers are not uploaded for analysis.</p>
+<p>Optional <strong>App Lock</strong> (under Settings) asks for a passphrase when you open the app. That helps on a shared computer. It is not a substitute for a strong Windows password or full-disk encryption such as BitLocker.</p>
+<p>There is no email reset for App Lock. If you forget the passphrase, you will need a backup you exported earlier, or you may lose access to locked data.</p>
+<p>Treat exported backup files like private documents. Do not share them in public places.</p>`,
   },
 ];
 

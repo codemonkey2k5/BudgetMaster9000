@@ -1,6 +1,8 @@
+mod acl_check;
 mod crypto;
 mod db;
 mod models;
+mod update;
 
 use db::{DbError, DbState};
 use models::*;
@@ -304,6 +306,18 @@ fn current_month() -> (i32, i32) {
     db::current_year_month()
 }
 
+#[tauri::command]
+fn check_for_update() -> Result<UpdateCheck, String> {
+    // Allowed while locked: version banner only; no budget data.
+    Ok(update::check_for_update())
+}
+
+#[tauri::command]
+fn download_update_package() -> Result<String, String> {
+    // Network download to the user's Downloads folder.
+    update::download_update_package()
+}
+
 /// Frontend self-test writes results next to the executable.
 #[tauri::command]
 fn report_ui_selftest(ok: bool, report: String) -> Result<String, String> {
@@ -384,6 +398,24 @@ pub fn run_self_test() -> Result<String, String> {
         return Err("resync failed to add line".into());
     }
 
+    // Mid-month add (must be ACL-allowed in production builds)
+    let snack = dash
+        .lines
+        .iter()
+        .find(|l| l.name == "SelfTest Snack")
+        .ok_or("snack line missing")?;
+    let t1 = add_to_actual(&conn, y, m, snack.budget_line_id, 20.0, None)
+        .map_err(|e| e.to_string())?;
+    if (t1 - 20.0).abs() > 0.01 {
+        return Err(format!("add_to_actual expected 20, got {t1}"));
+    }
+    let t2 = add_to_actual(&conn, y, m, snack.budget_line_id, 5.0, None)
+        .map_err(|e| e.to_string())?;
+    if (t2 - 25.0).abs() > 0.01 {
+        return Err(format!("add_to_actual expected 25, got {t2}"));
+    }
+
+    let dash = get_dashboard(&conn, y, m).map_err(|e| e.to_string())?;
     let actuals: Vec<ActualInput> = dash
         .lines
         .iter()
@@ -426,7 +458,7 @@ pub fn run_self_test() -> Result<String, String> {
     drop(conn);
     let _ = std::fs::remove_file(&path);
 
-    // Validate ACL permission file is present next to binary sources (dev) or embedded
+    // Validate ACL permission file lists critical + new commands
     let perm = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("permissions/app.toml");
     if !perm.exists() {
         return Err("permissions/app.toml missing".into());
@@ -440,6 +472,11 @@ pub fn run_self_test() -> Result<String, String> {
         "load_demo_data",
         "import_legacy_json",
         "export_json",
+        "add_to_actual",
+        "delete_month_line",
+        "resync_month",
+        "check_for_update",
+        "download_update_package",
     ] {
         if !perm_txt.contains(cmd) {
             return Err(format!("ACL missing command {cmd}"));
@@ -447,7 +484,7 @@ pub fn run_self_test() -> Result<String, String> {
     }
 
     Ok(format!(
-        "demo+crud+checkin+history+export+import+acl ok; grade={}",
+        "demo+crud+add_to_actual+checkin+history+export+import+acl ok; grade={}",
         result.grade
     ))
 }
@@ -507,6 +544,8 @@ pub fn run() {
             load_demo_data,
             current_month,
             report_ui_selftest,
+            check_for_update,
+            download_update_package,
         ])
         .setup(move |app| {
             if let Ok(dir) = app.path().app_data_dir() {

@@ -25,9 +25,13 @@ commands.allow = [
   "list_history",
   "reopen_month",
   "resync_month",
+  "add_to_actual",
+  "delete_month_line",
   "import_legacy_json",
   "export_json",
   "load_demo_data",
   "current_month",
-  "report_ui_selftest"
+  "report_ui_selftest",
+  "check_for_update",
+  "download_update_package"
 ]

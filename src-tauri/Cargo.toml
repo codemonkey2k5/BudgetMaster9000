@@ -27,3 +27,5 @@ rand = "0.8"
 base64 = "0.22"
 thiserror = "2"
 dirs = "6"
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
