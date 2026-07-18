@@ -103,7 +103,7 @@ const state: State = {
   showCategoryNotice: false,
   toast: null,
   toastError: false,
-  appVersion: "1.1.0",
+  appVersion: "1.1.1",
   update: null,
 };
 

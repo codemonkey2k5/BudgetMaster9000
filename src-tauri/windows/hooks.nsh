@@ -1,31 +1,31 @@
 ; Budget Master 9000 — NSIS installer hooks
-; Ensures Start Menu / Desktop shortcuts are removed and recreated on every install
-; (including upgrades) so Windows reloads icons from the newly installed EXE.
-
-Var HadDesktopShortcut
-Var HadStartMenuShortcut
+; Remove stale Start Menu / Desktop shortcuts, then always recreate them after
+; install (including upgrades) so Windows reloads icons from the new EXE.
+;
+; Important: on upgrade the previous uninstaller often deletes the desktop
+; shortcut *before* PREINSTALL runs, so "did we have a desktop icon?" is
+; unreliable. Desktop is therefore always recreated (same as Start Menu).
 
 !macro NSIS_HOOK_PREINSTALL
-  StrCpy $HadDesktopShortcut 0
-  StrCpy $HadStartMenuShortcut 0
-
-  ; Desktop shortcut
+  ; Desktop shortcut (current and common alternate names)
   IfFileExists "$DESKTOP\${PRODUCTNAME}.lnk" 0 bm_pre_no_desk
-    StrCpy $HadDesktopShortcut 1
     !insertmacro UnpinShortcut "$DESKTOP\${PRODUCTNAME}.lnk"
     Delete "$DESKTOP\${PRODUCTNAME}.lnk"
   bm_pre_no_desk:
 
+  IfFileExists "$DESKTOP\Budget Master 9000.lnk" 0 bm_pre_no_desk2
+    !insertmacro UnpinShortcut "$DESKTOP\Budget Master 9000.lnk"
+    Delete "$DESKTOP\Budget Master 9000.lnk"
+  bm_pre_no_desk2:
+
   ; Start Menu shortcut (flat, default Tauri layout)
   IfFileExists "$SMPROGRAMS\${PRODUCTNAME}.lnk" 0 bm_pre_no_sm
-    StrCpy $HadStartMenuShortcut 1
     !insertmacro UnpinShortcut "$SMPROGRAMS\${PRODUCTNAME}.lnk"
     Delete "$SMPROGRAMS\${PRODUCTNAME}.lnk"
   bm_pre_no_sm:
 
   ; Start Menu shortcut inside product folder (if used)
   IfFileExists "$SMPROGRAMS\${PRODUCTNAME}\${PRODUCTNAME}.lnk" 0 bm_pre_no_smf
-    StrCpy $HadStartMenuShortcut 1
     !insertmacro UnpinShortcut "$SMPROGRAMS\${PRODUCTNAME}\${PRODUCTNAME}.lnk"
     Delete "$SMPROGRAMS\${PRODUCTNAME}\${PRODUCTNAME}.lnk"
     RMDir "$SMPROGRAMS\${PRODUCTNAME}"
@@ -34,7 +34,6 @@ Var HadStartMenuShortcut
   ; Start Menu folder chosen by user (MUI start menu page)
   StrCmp $AppStartMenuFolder "" bm_pre_no_smf2
   IfFileExists "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk" 0 bm_pre_no_smf2
-    StrCpy $HadStartMenuShortcut 1
     !insertmacro UnpinShortcut "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk"
     Delete "$SMPROGRAMS\$AppStartMenuFolder\${PRODUCTNAME}.lnk"
     RMDir "$SMPROGRAMS\$AppStartMenuFolder"
@@ -42,20 +41,17 @@ Var HadStartMenuShortcut
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  ; Always force-refresh shortcuts after files are in place so the shell picks up
-  ; the multi-size icon embedded in the new EXE (Tauri skips shortcut creation in /UPDATE).
+  ; Always recreate shortcuts after files are in place so the shell picks up
+  ; the multi-size icon embedded in the new EXE (Tauri skips shortcut creation
+  ; on /UPDATE, and upgrade uninstall may have already removed the desktop icon).
   ${If} $NoShortcutMode = 0
-    ; Start Menu — always recreate (first install + upgrade)
+    ; Start Menu — first install + every upgrade
     CreateShortcut "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "" "$INSTDIR\${MAINBINARYNAME}.exe" 0
     !insertmacro SetLnkAppUserModelId "$SMPROGRAMS\${PRODUCTNAME}.lnk"
 
-    ; Desktop — restore previous, or create for silent/passive (matches Tauri defaults)
-    ${If} $HadDesktopShortcut = 1
-    ${OrIf} $PassiveMode = 1
-    ${OrIf} ${Silent}
-      CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "" "$INSTDIR\${MAINBINARYNAME}.exe" 0
-      !insertmacro SetLnkAppUserModelId "$DESKTOP\${PRODUCTNAME}.lnk"
-    ${EndIf}
+    ; Desktop — always recreate (do not gate on "had shortcut"; upgrade loses that signal)
+    CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "" "$INSTDIR\${MAINBINARYNAME}.exe" 0
+    !insertmacro SetLnkAppUserModelId "$DESKTOP\${PRODUCTNAME}.lnk"
   ${EndIf}
 
   ; Tell Explorer to refresh icons / shortcuts

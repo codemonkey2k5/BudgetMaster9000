@@ -1,6 +1,6 @@
 [package]
 name = "budget-master-9000"
-version = "1.1.0"
+version = "1.1.1"
 description = "Budget Master 9000 — private offline monthly budget app"
 authors = ["Budget Master 9000 Contributors"]
 edition = "2021"

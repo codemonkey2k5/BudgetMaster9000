@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+- **Installer fix:** Desktop shortcut is recreated on every install and upgrade. Previously PREINSTALL removed the icon, then POSTINSTALL only restored it if it still existed — which fails on upgrade because the old uninstall already deleted it.
+- Start Menu shortcut behavior unchanged (always recreated). Explorer icon cache refresh retained.
+
 ## 1.1.0
 
 ### Distribution (same two choices as 1.0.0)
