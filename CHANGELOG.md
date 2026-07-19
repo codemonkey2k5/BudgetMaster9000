@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.0
+
+### Fixes
+- Plan form label: **Budgeted amount ($)** (was Amount ($)).
+- Plan **Budget lines** table uses available vertical space.
+- History lists **closed months only**.
+- Dashboard Fixed vs flexible: removed redundant **Fixed budget** line.
+- **Update available** notice: more reliable GitHub check (retries, scans recent releases, re-checks when opening Settings and periodically in-session).
+
+### Features
+- Transactions **This month's entries**: clickable column headers sort (Details, Category, Status A–Z/Z–A; Budget, Actual, Used low–high/high–low).
+- Plan **Budget lines**: clickable column headers sort (Name, Category A–Z/Z–A; Amount, Monthly low–high/high–low).
+
 ## 1.1.1
 
 - **Installer fix:** Desktop shortcut is recreated on every install and upgrade. Previously PREINSTALL removed the icon, then POSTINSTALL only restored it if it still existed — which fails on upgrade because the old uninstall already deleted it.

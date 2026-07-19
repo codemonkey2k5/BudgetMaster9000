@@ -483,6 +483,74 @@ button {
   overflow: auto;
 }
 
+/* Plan: use remaining height for budget lines table */
+.plan-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: calc(100vh - 2.5rem);
+  gap: 0.85rem;
+}
+
+.plan-header,
+.plan-callout,
+.plan-form-card {
+  flex-shrink: 0;
+  margin-bottom: 0 !important;
+}
+
+.plan-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: 0 !important;
+  align-items: stretch;
+}
+
+.plan-lines-card {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.plan-lines-card > .card-pad {
+  flex-shrink: 0;
+}
+
+.plan-lines-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  overflow: auto;
+}
+
+.plan-cats-card {
+  min-height: 0;
+  overflow: auto;
+}
+
+.plan-cat-list {
+  max-height: none;
+}
+
+/* Sortable table headers */
+.th-sort {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.th-sort:hover {
+  color: var(--text);
+}
+
+.sort-ind {
+  font-size: 0.7em;
+  margin-left: 0.25rem;
+  opacity: 0.85;
+}
+
 table.data {
   width: 100%;
   border-collapse: collapse;

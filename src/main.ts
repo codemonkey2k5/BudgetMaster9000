@@ -77,6 +77,12 @@ interface State {
   toastError: boolean;
   appVersion: string;
   update: UpdateCheck | null;
+  /** Column sort for Transactions entries table */
+  txSortKey: "details" | "category" | "budget" | "actual" | "used" | "status";
+  txSortDir: "asc" | "desc";
+  /** Column sort for Plan budget lines table */
+  planSortKey: "name" | "category" | "amount" | "monthly";
+  planSortDir: "asc" | "desc";
 }
 
 const state: State = {
@@ -103,8 +109,12 @@ const state: State = {
   showCategoryNotice: false,
   toast: null,
   toastError: false,
-  appVersion: "1.1.1",
+  appVersion: "1.2.0",
   update: null,
+  txSortKey: "details",
+  txSortDir: "asc",
+  planSortKey: "name",
+  planSortDir: "asc",
 };
 
 let pieChart: Chart | null = null;
@@ -351,10 +361,15 @@ async function boot() {
  }
  await refreshAll();
  render();
- // Non-blocking: version banner / optional update notice
+ // Non-blocking: version banner; re-check later in-session if first attempt fails
  void refreshUpdateBanner().then(() => {
    if (state.update?.updateAvailable) render();
  });
+ window.setTimeout(() => {
+   void refreshUpdateBanner().then(() => {
+     if (state.update?.updateAvailable) render();
+   });
+ }, 60_000);
  } catch (e) {
  app.innerHTML = `<div class="center-screen"><div class="card lock-card"><h2>Startup error</h2><p>${esc(String(e))}</p></div></div>`;
  }
@@ -577,6 +592,12 @@ function bindShell() {
    state.editActualId = null;
  }
  render();
+ // Re-check updates when opening Settings (and whenever nav changes if not yet available)
+ if (state.view === "settings" || !state.update?.updateAvailable) {
+   void refreshUpdateBanner().then(() => {
+     if (state.update?.updateAvailable) render();
+   });
+ }
  });
  });
  app.querySelector("#btn-theme")?.addEventListener("click", async () => {
@@ -634,15 +655,64 @@ function bindShell() {
  });
 }
 
-/** Background check — fails quietly when offline. */
+/** Background check — fails quietly when offline; retries are done in Rust. */
 async function refreshUpdateBanner() {
   try {
     const info = await api.checkForUpdate();
     state.appVersion = info.currentVersion || state.appVersion;
+    const prevAvail = state.update?.updateAvailable ?? false;
     state.update = info;
+    // Re-paint when availability flips, or first successful check sets latestVersion
+    if (info.updateAvailable || prevAvail !== info.updateAvailable) {
+      /* caller may also render */
+    }
   } catch {
-    /* ignore network errors */
+    /* ignore network errors on the JS side */
   }
+}
+
+function sortIndicator(
+  activeKey: string,
+  key: string,
+  dir: "asc" | "desc"
+): string {
+  if (activeKey !== key) return `<span class="sort-ind dim">⇅</span>`;
+  return dir === "asc"
+    ? `<span class="sort-ind">▲</span>`
+    : `<span class="sort-ind">▼</span>`;
+}
+
+function toggleTxSort(
+  key: "details" | "category" | "budget" | "actual" | "used" | "status"
+) {
+  if (state.txSortKey === key) {
+    state.txSortDir = state.txSortDir === "asc" ? "desc" : "asc";
+  } else {
+    state.txSortKey = key;
+    state.txSortDir = "asc";
+  }
+  render();
+}
+
+function togglePlanSort(key: "name" | "category" | "amount" | "monthly") {
+  if (state.planSortKey === key) {
+    state.planSortDir = state.planSortDir === "asc" ? "desc" : "asc";
+  } else {
+    state.planSortKey = key;
+    state.planSortDir = "asc";
+  }
+  render();
+}
+
+function cmpStr(a: string, b: string, dir: "asc" | "desc"): number {
+  const c = a.localeCompare(b, undefined, { sensitivity: "base" });
+  return dir === "asc" ? c : -c;
+}
+
+function cmpNum(a: number, b: number, dir: "asc" | "desc"): number {
+  if (a === b) return 0;
+  const c = a < b ? -1 : 1;
+  return dir === "asc" ? c : -c;
 }
 
 function render() {
@@ -827,7 +897,6 @@ function viewDashboard(): string {
    </div>
    <div class="card card-pad report-panel">
      <div class="section-title">Fixed vs flexible</div>
-     <div class="report-metric"><span>Fixed budget</span><strong class="mono">${money(fixedBudget)}</strong></div>
      <div class="report-metric"><span>Fixed actual</span><strong class="mono">${money(fixedActual)}</strong></div>
      <div class="report-metric"><span>Flexible budget</span><strong class="mono">${money(flexBudget)}</strong></div>
      <div class="report-metric"><span>Flexible actual</span><strong class="mono">${money(flexActual)}</strong></div>
@@ -910,7 +979,7 @@ function viewTransactions(): string {
   if (!d) return `<div class="empty">Loading...</div>`;
   const open = d.month.status !== "reviewed";
 
-  let lines = d.lines;
+  let lines = [...d.lines];
   if (state.filter !== "all") lines = lines.filter((l) => l.status === state.filter);
   if (state.search.trim()) {
     const q = state.search.toLowerCase();
@@ -920,6 +989,32 @@ function viewTransactions(): string {
         l.categoryName.toLowerCase().includes(q)
     );
   }
+
+  const dir = state.txSortDir;
+  lines.sort((a, b) => {
+    switch (state.txSortKey) {
+      case "details":
+        return cmpStr(a.name, b.name, dir);
+      case "category":
+        return cmpStr(a.categoryName, b.categoryName, dir) || cmpStr(a.name, b.name, dir);
+      case "budget":
+        return cmpNum(a.budgetAmount, b.budgetAmount, dir);
+      case "actual": {
+        const av = a.actualAmount == null ? Number.NEGATIVE_INFINITY : a.actualAmount;
+        const bv = b.actualAmount == null ? Number.NEGATIVE_INFINITY : b.actualAmount;
+        return cmpNum(av, bv, dir);
+      }
+      case "used": {
+        const au = a.pctUsed == null ? Number.NEGATIVE_INFINITY : a.pctUsed;
+        const bu = b.pctUsed == null ? Number.NEGATIVE_INFINITY : b.pctUsed;
+        return cmpNum(au, bu, dir);
+      }
+      case "status":
+        return cmpStr(a.status, b.status, dir) || cmpStr(a.name, b.name, dir);
+      default:
+        return 0;
+    }
+  });
 
   const rows = lines
     .map((l) => {
@@ -1037,7 +1132,15 @@ function viewTransactions(): string {
      </div>
      <div class="table-wrap tx-table-wrap">
        <table class="data">
-         <thead><tr><th>Details</th><th>Category</th><th>Budget</th><th>Actual</th><th>Used</th><th>Status</th><th></th></tr></thead>
+         <thead><tr>
+           <th class="th-sort" data-tx-sort="details" title="Sort by name">Details ${sortIndicator(state.txSortKey, "details", state.txSortDir)}</th>
+           <th class="th-sort" data-tx-sort="category" title="Sort by category">Category ${sortIndicator(state.txSortKey, "category", state.txSortDir)}</th>
+           <th class="th-sort" data-tx-sort="budget" title="Sort by budget">Budget ${sortIndicator(state.txSortKey, "budget", state.txSortDir)}</th>
+           <th class="th-sort" data-tx-sort="actual" title="Sort by actual">Actual ${sortIndicator(state.txSortKey, "actual", state.txSortDir)}</th>
+           <th class="th-sort" data-tx-sort="used" title="Sort by used %">Used ${sortIndicator(state.txSortKey, "used", state.txSortDir)}</th>
+           <th class="th-sort" data-tx-sort="status" title="Sort by status">Status ${sortIndicator(state.txSortKey, "status", state.txSortDir)}</th>
+           <th></th>
+         </tr></thead>
          <tbody>${rows || `<tr><td colspan="7" class="empty">No lines match. Change the Plan, or wait for it to sync into this open month.</td></tr>`}</tbody>
        </table>
      </div>
@@ -1047,6 +1150,19 @@ function viewTransactions(): string {
 
 function bindTransactions() {
   bindMonthNav();
+
+  app.querySelectorAll<HTMLElement>("[data-tx-sort]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.txSort as
+        | "details"
+        | "category"
+        | "budget"
+        | "actual"
+        | "used"
+        | "status";
+      if (key) toggleTxSort(key);
+    });
+  });
 
   app.querySelectorAll<HTMLButtonElement>("[data-filter]").forEach((b) => {
     b.addEventListener("click", () => {
@@ -1734,7 +1850,27 @@ function viewPlan(): string {
  const editCat = state.editCategory;
  const totalMonthly = state.lines.reduce((s, l) => s + l.monthlyAmount, 0);
 
- const rows = state.lines
+ const sortedLines = [...state.lines];
+ const pdir = state.planSortDir;
+ sortedLines.sort((a, b) => {
+   switch (state.planSortKey) {
+     case "name":
+       return cmpStr(a.name, b.name, pdir);
+     case "category":
+       return (
+         cmpStr(a.categoryName, b.categoryName, pdir) ||
+         cmpStr(a.name, b.name, pdir)
+       );
+     case "amount":
+       return cmpNum(a.amount, b.amount, pdir);
+     case "monthly":
+       return cmpNum(a.monthlyAmount, b.monthlyAmount, pdir);
+     default:
+       return 0;
+   }
+ });
+
+ const rows = sortedLines
  .map(
  (l) => `
  <tr>
@@ -1754,20 +1890,21 @@ function viewPlan(): string {
  .join("");
 
  return `
- <div class="page-header">
+ <div class="plan-page">
+ <div class="page-header plan-header">
  <div>
  <h2>Budget plan</h2>
  <div class="sub">Your recurring template  -  ${money(totalMonthly)} / month planned</div>
  </div>
  </div>
 
- <div class="info-callout mb-2">
+ <div class="info-callout plan-callout">
  The Plan is the master list used when a new month starts.
  Categories are either <strong>Fixed</strong> (same every month: treated as on plan) or <strong>Flexible</strong> (you log actuals on Transactions / Close-Month).
  <a href="#" data-goto-help="plan">Help: Plan and categories</a>
  </div>
 
- <div class="card card-pad mb-2">
+ <div class="card card-pad plan-form-card">
  <div class="section-title">${edit ? "Edit budget line" : "Add budget line"}</div>
  <form id="line-form" class="form-row">
  <input type="hidden" id="line-id" value="${edit?.id ?? ""}" />
@@ -1785,7 +1922,7 @@ function viewPlan(): string {
  .join("")}</select>
  </div>
  <div class="field">
- <label>Amount ($)</label>
+ <label>Budgeted amount ($)</label>
  <div class="money-input">
  <span class="money-prefix">$</span>
  <input type="number" step="0.01" id="line-amt" required
@@ -1806,17 +1943,23 @@ function viewPlan(): string {
  <p class="dim mt-1">Fixed vs flexible is set on the <strong>category</strong>, not on each line.</p>
  </div>
 
- <div class="grid-2 mb-2">
- <div class="card">
+ <div class="grid-2 plan-body">
+ <div class="card plan-lines-card">
  <div class="card-pad section-title">Budget lines</div>
- <div class="table-wrap">
+ <div class="table-wrap plan-lines-table">
  <table class="data">
- <thead><tr><th>Name</th><th>Category</th><th>Amount</th><th>Monthly</th><th></th></tr></thead>
+ <thead><tr>
+   <th class="th-sort" data-plan-sort="name" title="Sort by name">Name ${sortIndicator(state.planSortKey, "name", state.planSortDir)}</th>
+   <th class="th-sort" data-plan-sort="category" title="Sort by category">Category ${sortIndicator(state.planSortKey, "category", state.planSortDir)}</th>
+   <th class="th-sort" data-plan-sort="amount" title="Sort by amount">Amount ${sortIndicator(state.planSortKey, "amount", state.planSortDir)}</th>
+   <th class="th-sort" data-plan-sort="monthly" title="Sort by monthly">Monthly ${sortIndicator(state.planSortKey, "monthly", state.planSortDir)}</th>
+   <th></th>
+ </tr></thead>
  <tbody>${rows || `<tr><td colspan="5" class="empty">No budget lines yet.</td></tr>`}</tbody>
  </table>
  </div>
  </div>
- <div class="card card-pad">
+ <div class="card card-pad plan-cats-card">
  <div class="section-title">${editCat ? "Edit category" : "Categories"}</div>
  <form id="cat-form" class="stack mb-1">
  <input type="hidden" id="cat-id" value="${editCat?.id ?? ""}" />
@@ -1836,7 +1979,7 @@ function viewPlan(): string {
  ${editCat ? `<button class="btn btn-ghost btn-sm" type="button" id="cat-cancel">Cancel</button>` : ""}
  </div>
  </form>
- <ul class="insight-list">
+ <ul class="insight-list plan-cat-list">
  ${state.categories
  .map(
  (c) =>
@@ -1855,10 +1998,21 @@ function viewPlan(): string {
  .join("")}
  </ul>
  </div>
+ </div>
  </div>`;
 }
 
 function bindPlan() {
+ app.querySelectorAll<HTMLElement>("[data-plan-sort]").forEach((th) => {
+   th.addEventListener("click", () => {
+     const key = th.dataset.planSort as
+       | "name"
+       | "category"
+       | "amount"
+       | "monthly";
+     if (key) togglePlanSort(key);
+   });
+ });
  app.querySelectorAll<HTMLAnchorElement>("[data-goto-help]").forEach((a) => {
  a.addEventListener("click", (e) => {
  e.preventDefault();
@@ -1970,33 +2124,29 @@ function bindPlan() {
 
 /* HISTORY */
 function viewHistory(): string {
- const items = state.history
+ const closedMonths = state.history.filter((h) => h.status === "reviewed");
+ const items = closedMonths
  .map((h) => {
- const closed = h.status === "reviewed";
  return `
  <div class="history-item">
  <div style="flex:1">
  <div style="font-weight:800">${monthName(h.month)} ${h.year}</div>
  <div class="dim">
- ${closed ? "Closed" : "Open: still editable"}
+ Closed
  ${h.closedAt ? `  -  finished ${esc(h.closedAt.slice(0, 10))}` : ""}
  </div>
  ${
  h.grade
  ? `<div class="mt-1"><span class="grade-pill" title="${esc(gradeExplain(h.grade))}">${esc(h.grade)}</span>
  <span class="dim" style="margin-left:0.5rem">${esc(gradeExplain(h.grade))}</span></div>`
- : `<div class="dim mt-1">No grade yet (use Close-Month to score this month).</div>`
+ : `<div class="dim mt-1">No grade recorded for this closed month.</div>`
  }
  </div>
  <div class="flex-gap" style="flex-direction:column;align-items:stretch">
  <button class="btn btn-primary btn-sm" data-open-m="${h.year}-${h.month}"
  title="Show this month on the Dashboard (same as using the month arrows)">View on Dashboard</button>
- ${
- closed
- ? `<button class="btn btn-ghost btn-sm" data-reopen="${h.year}-${h.month}"
- title="Unlock this month so you can fix numbers, then run Close-Month again">Reopen for editing</button>`
- : `<span class="dim" style="font-size:0.75rem;text-align:center">Already open</span>`
- }
+ <button class="btn btn-ghost btn-sm" data-reopen="${h.year}-${h.month}"
+ title="Unlock this month so you can fix numbers, then run Close-Month again">Reopen for editing</button>
  </div>
  </div>`;
  })
@@ -2015,7 +2165,7 @@ function viewHistory(): string {
  <a href="#" data-goto-help="history">Full explanation in Help</a>
  </div>
  <div class="card">
- ${items || `<div class="empty">No months yet: open the Dashboard to create the current month, then use Close-Month.</div>`}
+ ${items || `<div class="empty">No closed months yet. When you finish Close-Month, that month appears here.</div>`}
  </div>`;
 }
 

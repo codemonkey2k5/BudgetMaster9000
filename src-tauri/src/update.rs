@@ -10,16 +10,27 @@ use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 const REPO: &str = "codemonkey2k5/BudgetMaster9000";
-const USER_AGENT: &str = "BudgetMaster9000-update-check";
 
-#[derive(Debug, Deserialize)]
+fn user_agent() -> String {
+    format!(
+        "BudgetMaster9000/{} (+https://github.com/{REPO})",
+        env!("CARGO_PKG_VERSION")
+    )
+}
+
+#[derive(Debug, Clone, Deserialize)]
 struct GhRelease {
     tag_name: String,
     html_url: String,
+    #[serde(default)]
+    draft: bool,
+    #[serde(default)]
+    prerelease: bool,
+    #[serde(default)]
     assets: Vec<GhAsset>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct GhAsset {
     name: String,
     browser_download_url: String,
@@ -48,25 +59,31 @@ fn parse_ver(v: &str) -> (u64, u64, u64) {
 
 fn http_get_json(url: &str) -> Result<String, String> {
     let agent = ureq::AgentBuilder::new()
-        .timeout(std::time::Duration::from_secs(12))
-        .user_agent(USER_AGENT)
+        .timeout(std::time::Duration::from_secs(15))
+        .user_agent(&user_agent())
         .build();
-    agent
+    let resp = agent
         .get(url)
         .set("Accept", "application/vnd.github+json")
+        .set("X-GitHub-Api-Version", "2022-11-28")
         .call()
-        .map_err(|e| e.to_string())?
-        .into_string()
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let body = resp.into_string().map_err(|e| e.to_string())?;
+    if status < 200 || status >= 300 {
+        return Err(format!("GitHub HTTP {status}: {body}"));
+    }
+    Ok(body)
 }
 
 fn http_get_bytes(url: &str) -> Result<Vec<u8>, String> {
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(120))
-        .user_agent(USER_AGENT)
+        .user_agent(&user_agent())
         .build();
     let mut reader = agent
         .get(url)
+        .set("X-GitHub-Api-Version", "2022-11-28")
         .call()
         .map_err(|e| e.to_string())?
         .into_reader();
@@ -77,11 +94,52 @@ fn http_get_bytes(url: &str) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
+/// Pick the highest non-draft, non-prerelease release from a list (or one latest object).
+fn best_published_release(releases: &[GhRelease]) -> Option<&GhRelease> {
+    releases
+        .iter()
+        .filter(|r| !r.draft && !r.prerelease)
+        .max_by(|a, b| {
+            parse_ver(&a.tag_name)
+                .cmp(&parse_ver(&b.tag_name))
+        })
+}
+
+fn fetch_best_release() -> Result<GhRelease, String> {
+    // Prefer /releases list so we never miss a published tag if /latest is odd;
+    // fall back to /latest.
+    let list_url = format!("https://api.github.com/repos/{REPO}/releases?per_page=15");
+    if let Ok(body) = http_get_json(&list_url) {
+        if let Ok(list) = serde_json::from_str::<Vec<GhRelease>>(&body) {
+            if let Some(best) = best_published_release(&list) {
+                return Ok(GhRelease {
+                    tag_name: best.tag_name.clone(),
+                    html_url: best.html_url.clone(),
+                    draft: best.draft,
+                    prerelease: best.prerelease,
+                    assets: best.assets.clone(),
+                });
+            }
+        }
+    }
+    let latest_url = format!("https://api.github.com/repos/{REPO}/releases/latest");
+    let body = http_get_json(&latest_url)?;
+    let rel: GhRelease = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    if rel.draft || rel.prerelease {
+        return Err("Latest GitHub release is draft or prerelease".into());
+    }
+    Ok(rel)
+}
+
+/// Network check with a few retries (transient failures / cold start).
 pub fn check_for_update() -> UpdateCheck {
     let current = current_version();
-    let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
-    match http_get_json(&url) {
-        Ok(body) => match serde_json::from_str::<GhRelease>(&body) {
+    let mut last_err = String::new();
+    for attempt in 0..3 {
+        if attempt > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(400 * attempt as u64));
+        }
+        match fetch_best_release() {
             Ok(rel) => {
                 let latest = rel.tag_name.trim_start_matches('v').to_string();
                 let zip = rel
@@ -89,7 +147,7 @@ pub fn check_for_update() -> UpdateCheck {
                     .iter()
                     .find(|a| a.name.to_lowercase().ends_with(".zip"))
                     .map(|a| a.name.clone());
-                UpdateCheck {
+                return UpdateCheck {
                     update_available: version_is_newer(&latest, &current),
                     current_version: current,
                     latest_version: latest,
@@ -97,27 +155,19 @@ pub fn check_for_update() -> UpdateCheck {
                     zip_asset_name: zip,
                     checked: true,
                     error: None,
-                }
+                };
             }
-            Err(e) => UpdateCheck {
-                current_version: current.clone(),
-                latest_version: current,
-                update_available: false,
-                release_url: format!("https://github.com/{REPO}/releases"),
-                zip_asset_name: None,
-                checked: true,
-                error: Some(format!("Could not parse GitHub response: {e}")),
-            },
-        },
-        Err(e) => UpdateCheck {
-            current_version: current.clone(),
-            latest_version: current,
-            update_available: false,
-            release_url: format!("https://github.com/{REPO}/releases"),
-            zip_asset_name: None,
-            checked: true,
-            error: Some(format!("Offline or unreachable: {e}")),
-        },
+            Err(e) => last_err = e,
+        }
+    }
+    UpdateCheck {
+        current_version: current.clone(),
+        latest_version: current,
+        update_available: false,
+        release_url: format!("https://github.com/{REPO}/releases"),
+        zip_asset_name: None,
+        checked: true,
+        error: Some(format!("Could not check for updates: {last_err}")),
     }
 }
 
@@ -162,9 +212,7 @@ fn downloads_dir() -> PathBuf {
 /// Download the release zip if present; otherwise build a zip with installer/portable
 /// assets from the release plus UPGRADE.txt.
 pub fn download_update_package() -> Result<String, String> {
-    let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
-    let body = http_get_json(&url)?;
-    let rel: GhRelease = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    let rel = fetch_best_release()?;
     let latest = rel.tag_name.trim_start_matches('v').to_string();
     let current = current_version();
     if !version_is_newer(&latest, &current) {
@@ -252,8 +300,40 @@ mod tests {
     fn semver_compare() {
         assert!(version_is_newer("1.1.0", "1.0.0"));
         assert!(version_is_newer("v1.2.0", "1.1.9"));
+        assert!(version_is_newer("1.1.1", "1.1.0"));
+        assert!(version_is_newer("1.2.0", "1.1.1"));
         assert!(!version_is_newer("1.0.0", "1.0.0"));
         assert!(!version_is_newer("1.0.0", "1.1.0"));
+        assert!(!version_is_newer("1.1.0", "1.1.1"));
+    }
+
+    #[test]
+    fn best_release_skips_draft_and_picks_highest() {
+        let list = vec![
+            GhRelease {
+                tag_name: "v1.0.0".into(),
+                html_url: "u".into(),
+                draft: false,
+                prerelease: false,
+                assets: vec![],
+            },
+            GhRelease {
+                tag_name: "v1.2.0".into(),
+                html_url: "u".into(),
+                draft: true,
+                prerelease: false,
+                assets: vec![],
+            },
+            GhRelease {
+                tag_name: "v1.1.1".into(),
+                html_url: "u".into(),
+                draft: false,
+                prerelease: false,
+                assets: vec![],
+            },
+        ];
+        let best = best_published_release(&list).unwrap();
+        assert_eq!(best.tag_name, "v1.1.1");
     }
 
     #[test]
