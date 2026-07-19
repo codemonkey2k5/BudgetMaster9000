@@ -15,7 +15,6 @@
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-lightgrey">
   <img alt="Privacy" src="https://img.shields.io/badge/telemetry-none-success">
   <img alt="Offline" src="https://img.shields.io/badge/offline--first-indigo">
-  <img alt="Stars" src="https://img.shields.io/github/stars/codemonkey2k5/BudgetMaster9000?style=social">
 </p>
 
 ---
@@ -25,124 +24,107 @@
 Most budget tools want your bank login, your email, and a monthly fee.  
 **Budget Master 9000** wants none of that.
 
-You get a calm desktop app that answers the only questions that matter:
+You get a simple desktop app that helps you answer:
 
-- What did I *plan* to spend this month?
-- What did I *actually* spend?
-- Where did I do well, and where should I tighten up?
+- What did I plan to spend this month?
+- What did I actually spend?
+- Where should I tighten up next month?
 
-Built for people who like a simple plan, spending logged as it happens, and data that never leaves their PC.
+Your numbers stay on your computer.
 
-![Dashboard: month command center](docs/screenshots/01-dashboard.png)
+![Dashboard](docs/screenshots/01-dashboard.png)
 
-*See the month at a glance: income, budget, actuals, charts, pace, and what needs attention.*
+*See the whole month at a glance: income, budget, spending, charts, and what needs attention.*
 
 ---
 
 ## Get started
 
-1. **[Download the latest release](https://github.com/codemonkey2k5/BudgetMaster9000/releases/latest)** for Windows.
-2. Choose **one** of these — no extra software, no manual data files to move:
+1. **[Download the latest version](https://github.com/codemonkey2k5/BudgetMaster9000/releases/latest)** for Windows.
+2. Choose **one** option:
 
-| Download | New install | Upgrade |
-|----------|-------------|---------|
-| **Installer** (setup `.exe` or `.msi`) | Run it. Open from Start menu or desktop. | Run the new setup. Your budget stays in AppData automatically. |
-| **Portable** (`BudgetMaster9000.exe`) | Save it anywhere. Double‑click it. | Replace the `.exe` in the **same folder**. Leave `bm9000.db` alone. |
-| **Windows zip** | Unpack, then use the installer or portable file inside. | Same as above; includes short upgrade notes. |
+| What you download | New install | Upgrade |
+|-------------------|-------------|---------|
+| **Installer** (setup `.exe`) | Run it, then open Budget Master 9000 from the Start menu or desktop. | Run the new setup. Your budget is kept automatically. The desktop shortcut is put back for you. |
+| **Portable** (`BudgetMaster9000.exe`) | Save it anywhere and double‑click it. | Put the new file in the **same folder** as the old one (replace it). Do not move your data file (`bm9000.db`). |
+| **Windows zip** | Open the zip, then use the installer or the portable file inside. | Same as above. The zip includes short upgrade notes. |
 
-That’s it. No copying databases, no editing config files, no setup scripts.
+No other software is required. No accounts to create. No setup scripts.
 
-On first launch the app creates your local database, then offers **Start blank**, **Load demo**, or **Import** a backup.
+On first open you can start blank, load a demo budget, or bring in a backup file.
 
-> **Windows only (x64).** Works on modern Windows 10 and Windows 11.
+> **Windows 10 or 11, 64‑bit.**
 
 ---
 
-## Features
+## What you can do
 
 | | |
 |---|---|
-| **Dashboard** | Month command center: KPIs, charts, pace, cash runway, and attention reports. |
-| **Transactions** | Log spending anytime. Pick a line, enter an amount, submit — totals stack as you go. |
-| **Plan** | Recurring budget template. Open months update automatically when you change the Plan. |
-| **Close-Month** | When you are ready, verify numbers and lock the month with a letter grade and tips. |
-| **Fixed vs Flexible** | Fixed bills stay on plan; flexible items are what you track through the month. |
-| **History** | Closed months keep their grades. Reopen only when you need to fix something. |
-| **Import / export** | Full backups anytime. |
-| **Optional App Lock** | Passphrase gate for shared computers. |
-| **Portable or installed** | One portable file, or a normal installer — your choice. |
-| **Built-in Help** | Searchable guides written for first-time users. |
+| **Dashboard** | See income, budget, actual spending, charts, pace, and items that need attention. |
+| **Transactions** | Record spending anytime. Choose a line, enter an amount, submit. Sort the table by clicking column titles. |
+| **Plan** | Set up your recurring budget (rent, groceries, subscriptions, and so on). Sort the line list by clicking headers. |
+| **Close-Month** | When the month is done, review the numbers and save a grade. |
+| **History** | Look back at closed months and reopen one if you need to fix something. |
+| **Help** | Searchable answers in plain language. |
+| **Settings** | Set take-home pay, optional app lock, export or import a backup. |
+
+Your version number is in the lower left. When the app can reach the internet and a newer version has been published, an **Update available** notice appears there automatically. Click it to download the new package (install files plus short upgrade instructions).
 
 ---
 
 ## Screenshots
 
-### Dashboard: the month command center
+### Dashboard
 
-![Dashboard overview](docs/screenshots/01-dashboard.png)
+![Dashboard](docs/screenshots/01-dashboard.png)
 
-Income, budgeted totals, actuals, remaining cash, high-contrast charts, pace, and what needs attention.
-
-### Transactions: log spending as it happens
+### Transactions
 
 ![Transactions](docs/screenshots/02-transactions.png)
 
-Choose a budget line, enter what you spent, and submit. Edit or delete entries for the open month.
+### Plan
 
-### Plan: set it once, reuse every month
+![Plan](docs/screenshots/03-plan.png)
 
-![Plan editor](docs/screenshots/03-plan.png)
-
-Recurring lines (weekly, monthly, or yearly). Categories are Fixed or Flexible so the plan stays consistent.
-
-### Close-Month: verify, then lock it in
+### Close-Month
 
 ![Close-Month](docs/screenshots/04-close-month.png)
 
-A short walkthrough: confirm income, review flexible spending, finish with a grade and plain-language tips.
+### History
 
-### History: grades you can understand
+![History](docs/screenshots/05-history.png)
 
-![History of months](docs/screenshots/05-history.png)
+### Help
 
-Browse past months, open any month on the Dashboard, or reopen a closed month to correct numbers.
+![Help](docs/screenshots/06-help.png)
 
-### Help: answers in plain language
-
-![In-app Help](docs/screenshots/06-help.png)
-
-Search topics like transactions, plan, grades, backups, install/upgrade, and privacy.
-
-### Settings: income, lock, backup, and a safe reset
+### Settings
 
 ![Settings](docs/screenshots/07-settings.png)
 
-Net monthly income drives the math. Optional App Lock. Export backups. Clear data only if you type `DELETE DATA`.
+---
+
+## A typical month
+
+1. Set your take-home pay under **Settings**.
+2. Build or adjust your **Plan**.
+3. During the month, log spending on **Transactions**.
+4. Check progress on the **Dashboard**.
+5. When you are ready, use **Close-Month** to finish and save a grade.
 
 ---
 
-## How a typical month looks
+## Privacy
 
-1. Build your **Plan** (or import a backup) and set net income under **Settings**.
-2. Live the month — record spending on **Transactions** whenever it happens.
-3. Check progress on the **Dashboard**.
-4. When you are ready, open **Close-Month**, verify totals, and finish.
-5. Use the grade and “needs attention” notes to adjust next month’s Plan if something keeps overrunning.
+- No accounts  
+- No cloud  
+- No ads  
+- No tracking of your budget for marketing  
 
-Fixed bills (rent, insurance, streaming) fill themselves so they do not sit as “not entered.”
+Everything is stored on your PC. Optional App Lock helps on a shared computer. It is not a replacement for a Windows password or full-disk encryption. Export a backup before big changes. Clearing data cannot be undone without a backup.
 
----
-
-## Privacy, on purpose
-
-- **No accounts**
-- **No cloud sync**
-- **No ads**
-- **No telemetry**
-
-Everything stays on your computer. Optional App Lock is for casual privacy on a shared PC — not a substitute for full-disk encryption (BitLocker) or a good Windows password. Export backups before major changes. Clearing the database is permanent without a backup.
-
-Optional update checks contact GitHub only when the app looks for a newer release, and only download a package if you ask.
+When online, the app may check GitHub in the background to see if a newer release exists. It only downloads a file if you click the update notice. Offline, everything still works; you simply will not see an update notice.
 
 ---
 
@@ -153,5 +135,5 @@ Optional update checks contact GitHub only when the app looks for a newer releas
 ---
 
 <p align="center">
-  <em>Budget Master 9000: private by default, useful every month.</em>
+  <em>Budget Master 9000 — private by default, useful every month.</em>
 </p>

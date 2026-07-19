@@ -132,7 +132,7 @@ export const HELP_SECTIONS: HelpSection[] = [
 </ul>
 <p><strong>Upgrading the installer:</strong> download the new setup and run it. Your budget stays in place automatically.</p>
 <p><strong>Upgrading portable:</strong> download the new program file and replace the old one in the same folder. Do not move or rename your database file.</p>
-<p>Your version number appears at the bottom of the left menu. If a newer release is available online, you may see an update notice there. Click it to download a package that includes short upgrade instructions.</p>`,
+<p>Your version number appears at the bottom of the left menu. When a newer release is available online, an update notice appears there automatically. Click it to download the new package (with short upgrade instructions).</p>`,
   },
   {
     id: "security",

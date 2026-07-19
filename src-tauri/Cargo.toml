@@ -29,3 +29,15 @@ thiserror = "2"
 dirs = "6"
 ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# Optional: local-only update notification tester (not shipped in the product installer)
+eframe = { version = "0.29", optional = true, default-features = true }
+
+[features]
+default = []
+# Build Tony's local update-check tester: cargo build --release --bin bm9000-update-tester --features update-tester
+update-tester = ["dep:eframe"]
+
+[[bin]]
+name = "bm9000-update-tester"
+path = "src/bin/update_tester.rs"
+required-features = ["update-tester"]

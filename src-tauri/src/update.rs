@@ -132,8 +132,20 @@ fn fetch_best_release() -> Result<GhRelease, String> {
 }
 
 /// Network check with a few retries (transient failures / cold start).
+/// Uses the real app version baked into this binary.
 pub fn check_for_update() -> UpdateCheck {
-    let current = current_version();
+    check_for_update_with_current(&current_version())
+}
+
+/// Same logic as production, but pretends the installed version is `current`.
+/// Used by the local update-tester tool so Tony can simulate older builds.
+pub fn check_for_update_with_current(current: &str) -> UpdateCheck {
+    let current = current.trim().trim_start_matches('v').to_string();
+    let current = if current.is_empty() {
+        current_version()
+    } else {
+        current
+    };
     let mut last_err = String::new();
     for attempt in 0..3 {
         if attempt > 0 {
@@ -212,9 +224,19 @@ fn downloads_dir() -> PathBuf {
 /// Download the release zip if present; otherwise build a zip with installer/portable
 /// assets from the release plus UPGRADE.txt.
 pub fn download_update_package() -> Result<String, String> {
+    download_update_package_with_current(&current_version())
+}
+
+/// Same download path as production, using a simulated installed version.
+pub fn download_update_package_with_current(current: &str) -> Result<String, String> {
+    let current = current.trim().trim_start_matches('v').to_string();
+    let current = if current.is_empty() {
+        current_version()
+    } else {
+        current
+    };
     let rel = fetch_best_release()?;
     let latest = rel.tag_name.trim_start_matches('v').to_string();
-    let current = current_version();
     if !version_is_newer(&latest, &current) {
         return Err("You already have the latest version.".into());
     }

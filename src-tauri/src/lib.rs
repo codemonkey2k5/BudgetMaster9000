@@ -2,7 +2,10 @@ mod acl_check;
 mod crypto;
 mod db;
 mod models;
-mod update;
+/// Public so the local `bm9000-update-tester` binary can call the same logic as the app.
+pub mod update;
+
+pub use models::UpdateCheck;
 
 use db::{DbError, DbState};
 use models::*;
