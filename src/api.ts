@@ -126,6 +126,33 @@ export interface UpdateCheck {
   error: string | null;
 }
 
+/** One dated spend/adjustment event (Reports + ledger). */
+export interface LineTransaction {
+  id: number;
+  year: number;
+  month: number;
+  budgetLineId: number;
+  lineName: string;
+  categoryId: number;
+  categoryName: string;
+  categoryColor: string;
+  isFixed: boolean;
+  amount: number;
+  occurredOn: string;
+  notes: string;
+  source: string;
+  createdAt: string;
+}
+
+export interface ListTransactionsFilter {
+  year?: number | null;
+  month?: number | null;
+  budgetLineId?: number | null;
+  fromDate?: string | null;
+  toDate?: string | null;
+  categoryId?: number | null;
+}
+
 export const api = {
   getStatus: () => invoke<AppStatus>("get_status"),
   unlock: (password: string) => invoke<boolean>("unlock", { password }),
@@ -187,7 +214,8 @@ export const api = {
     month: number,
     budgetLineId: number,
     amount: number,
-    notes?: string | null
+    notes?: string | null,
+    occurredOn?: string | null
   ) =>
     invoke<number>("add_to_actual", {
       year,
@@ -195,6 +223,16 @@ export const api = {
       budgetLineId,
       amount,
       notes: notes ?? null,
+      occurredOn: occurredOn ?? null,
+    }),
+  listLineTransactions: (filter: ListTransactionsFilter = {}) =>
+    invoke<LineTransaction[]>("list_line_transactions", {
+      year: filter.year ?? null,
+      month: filter.month ?? null,
+      budgetLineId: filter.budgetLineId ?? null,
+      fromDate: filter.fromDate ?? null,
+      toDate: filter.toDate ?? null,
+      categoryId: filter.categoryId ?? null,
     }),
   deleteMonthLine: (year: number, month: number, budgetLineId: number) =>
     invoke<void>("delete_month_line", { year, month, budgetLineId }),

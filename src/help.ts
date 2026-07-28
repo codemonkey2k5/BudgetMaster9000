@@ -19,8 +19,9 @@ export const HELP_SECTIONS: HelpSection[] = [
 <ol>
 <li>Set your take-home pay under <strong>Settings</strong>.</li>
 <li>Build your recurring budget under <strong>Plan</strong> (rent, groceries, subscriptions, and so on).</li>
-<li>During the month, record spending under <strong>Transactions</strong>.</li>
+<li>During the month, record spending under <strong>Transactions</strong> (each submit has a date).</li>
 <li>Watch the big picture on the <strong>Dashboard</strong>.</li>
+<li>Review dated lists and summaries under <strong>Reports</strong>.</li>
 <li>When the month is over, use <strong>Close-Month</strong> to verify totals and save a grade to <strong>History</strong>.</li>
 </ol>
 <p>On first launch you can start blank, load demo data, or import a backup.</p>`,
@@ -51,23 +52,44 @@ export const HELP_SECTIONS: HelpSection[] = [
 <li><strong>Fixed</strong> — usually the same amount (housing, insurance, many subscriptions).</li>
 <li><strong>Flexible</strong> — amounts that change (food, entertainment, gas).</li>
 </ul>
-<p>When you change the Plan, the current open month is updated automatically so new or renamed items appear where you track spending. Months you already closed keep their original numbers.</p>`,
+<p>When you change the Plan, the current open month is updated automatically so new or renamed items appear where you track spending. <strong>Deleting</strong> a Plan line removes it from the Plan and from the open month. Months you already closed keep their original numbers.</p>
+<p>Use <strong>Edit</strong> on a line to load it into the form at the top, change it, and save.</p>`,
   },
   {
     id: "transactions",
     title: "Transactions",
-    tags: ["transactions", "spending", "actuals", "submit", "log"],
+    tags: ["transactions", "spending", "actuals", "submit", "log", "date"],
     body: `
 <p>Use Transactions to record what you spent during the month you have selected.</p>
 <p><strong>Add to a total</strong></p>
 <ol>
 <li>Choose the budget item from the <strong>Line</strong> list.</li>
 <li>Enter the amount you spent.</li>
+<li>Confirm the <strong>Date</strong> (defaults to today).</li>
 <li>Click <strong>Submit</strong>.</li>
 </ol>
-<p>Each submission adds to that item’s total for the month. For example, if groceries already show $100 and you submit $20, the total becomes $120. The same line stays selected so you can enter several purchases in a row.</p>
-<p>In the table you can <strong>Edit</strong> a total to set an exact amount, or <strong>Delete</strong> an item from this month only if you do not want it counted here.</p>
+<p>Each submission adds to that item’s total for the month and stores a dated transaction for <strong>Reports</strong>. For example, if groceries already show $100 and you submit $20, the total becomes $120. The same line stays selected so you can enter several purchases in a row.</p>
+<p>In the table you can <strong>Edit</strong> a total to set an exact amount (this replaces the line’s event list so totals always stay correct), or <strong>Delete</strong> an item from this month only if you do not want it counted here.</p>
 <p>Switch months with the arrows at the top if you need to correct an earlier open month.</p>`,
+  },
+  {
+    id: "reports",
+    title: "Reports",
+    tags: ["reports", "print", "dates", "list", "category", "daily"],
+    body: `
+<p>Reports shows dated transactions and summaries. Totals match the same math as the Dashboard for each line and month.</p>
+<p><strong>Scope</strong></p>
+<ul>
+<li><strong>Current month</strong> — all dated events for the month shown in the app (same month as Dashboard / Transactions).</li>
+<li><strong>All transactions</strong> — optional date range across months.</li>
+<li><strong>By budget line</strong> — one line, optional date range.</li>
+</ul>
+<p><strong>Report types</strong></p>
+<ul>
+<li>Transaction list (sortable by date, name, type, category, amount, month)</li>
+<li>By category · Daily spend · Fixed vs flexible · Over budget · Month comparison</li>
+</ul>
+<p>Use <strong>Print</strong> to print (or save as PDF) the report currently on screen.</p>`,
   },
   {
     id: "checkin",

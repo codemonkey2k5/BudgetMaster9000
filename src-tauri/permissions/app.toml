@@ -26,6 +26,7 @@ commands.allow = [
   "reopen_month",
   "resync_month",
   "add_to_actual",
+  "list_line_transactions",
   "delete_month_line",
   "import_legacy_json",
   "export_json",

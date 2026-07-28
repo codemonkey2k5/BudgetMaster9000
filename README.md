@@ -62,10 +62,11 @@ On first open you can start blank, load a demo budget, or bring in a backup file
 | | |
 |---|---|
 | **Dashboard** | See income, budget, actual spending, charts, pace, and items that need attention. |
-| **Transactions** | Record spending anytime. Choose a line, enter an amount, submit. Sort the table by clicking column titles. |
-| **Plan** | Set up your recurring budget (rent, groceries, subscriptions, and so on). Sort the line list by clicking headers. |
+| **Transactions** | Record spending anytime with a date. Choose a line, amount, and date; submit. Sort the table by clicking column titles. |
+| **Plan** | Set up your recurring budget (rent, groceries, subscriptions, and so on). Edit or delete lines; open months stay in sync. |
 | **Close-Month** | When the month is done, review the numbers and save a grade. |
 | **History** | Look back at closed months and reopen one if you need to fix something. |
+| **Reports** | Dated transaction lists and summaries (by line, category, day, fixed vs flexible, over budget, month comparison). Print any report. |
 | **Help** | Searchable answers in plain language. |
 | **Settings** | Set take-home pay, optional app lock, export or import a backup. |
 
@@ -124,7 +125,7 @@ Your version number is in the lower left. When the app can reach the internet an
 
 Everything is stored on your PC. Optional App Lock helps on a shared computer. It is not a replacement for a Windows password or full-disk encryption. Export a backup before big changes. Clearing data cannot be undone without a backup.
 
-When online, the app may check GitHub in the background to see if a newer release exists. It only downloads a file if you click the update notice. Offline, everything still works; you simply will not see an update notice.
+When online, the app checks GitHub in the background for a newer release and shows a notice if one exists. Nothing is downloaded until you click that notice. Offline, everything still works; you simply will not see an update notice.
 
 ---
 

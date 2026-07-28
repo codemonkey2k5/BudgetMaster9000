@@ -22,6 +22,7 @@ import {
  type Category,
  type CheckInResult,
  type IncomeSettings,
+ type LineTransaction,
  type MonthDashboard,
  type MonthInfo,
  type MonthLine,
@@ -46,8 +47,25 @@ type View =
   | "checkin"
   | "plan"
   | "history"
+  | "reports"
   | "settings"
   | "help";
+
+type ReportMode = "all" | "line" | "month";
+type ReportKind =
+  | "ledger"
+  | "category"
+  | "daily"
+  | "fixed_flex"
+  | "over_budget"
+  | "compare";
+type ReportSortKey =
+  | "date"
+  | "name"
+  | "category"
+  | "type"
+  | "amount"
+  | "month";
 
 interface State {
   status: AppStatus | null;
@@ -83,6 +101,35 @@ interface State {
   /** Column sort for Plan budget lines table */
   planSortKey: "name" | "category" | "amount" | "monthly";
   planSortDir: "asc" | "desc";
+  /** Reports tab */
+  reportMode: ReportMode;
+  reportKind: ReportKind;
+  reportLineId: number | null;
+  reportFrom: string;
+  reportTo: string;
+  reportSortKey: ReportSortKey;
+  reportSortDir: "asc" | "desc";
+  reportTxs: LineTransaction[];
+  reportLoading: boolean;
+  /** Prior month dashboard for comparison report */
+  reportCompareDash: MonthDashboard | null;
+}
+
+function todayIso(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function monthStartIso(year: number, month: number): string {
+  return `${year}-${String(month).padStart(2, "0")}-01`;
+}
+
+function monthEndIso(year: number, month: number): string {
+  const last = new Date(year, month, 0).getDate();
+  return `${year}-${String(month).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
 }
 
 const state: State = {
@@ -109,12 +156,22 @@ const state: State = {
   showCategoryNotice: false,
   toast: null,
   toastError: false,
-  appVersion: "1.2.0",
+  appVersion: "1.3.0",
   update: null,
   txSortKey: "details",
   txSortDir: "asc",
   planSortKey: "name",
   planSortDir: "asc",
+  reportMode: "month",
+  reportKind: "ledger",
+  reportLineId: null,
+  reportFrom: monthStartIso(new Date().getFullYear(), new Date().getMonth() + 1),
+  reportTo: monthEndIso(new Date().getFullYear(), new Date().getMonth() + 1),
+  reportSortKey: "date",
+  reportSortDir: "desc",
+  reportTxs: [],
+  reportLoading: false,
+  reportCompareDash: null,
 };
 
 let pieChart: Chart | null = null;
@@ -526,6 +583,7 @@ function shell(content: string): string {
  ${nav("checkin", "C", "Close-Month")}
  ${nav("plan", "P", "Plan")}
  ${nav("history", "H", "History")}
+ ${nav("reports", "R", "Reports")}
  ${nav("help", "?", "Help")}
  ${nav("settings", "S", "Settings")}
  <div class="sidebar-foot">
@@ -590,6 +648,14 @@ function bindShell() {
  }
  if (state.view !== "transactions") {
    state.editActualId = null;
+ }
+ if (state.view === "reports") {
+   // Default current-month mode to the month shown in the app header
+   if (state.reportMode === "month") {
+     state.reportFrom = monthStartIso(state.year, state.month);
+     state.reportTo = monthEndIso(state.year, state.month);
+   }
+   void loadReportsData();
  }
  render();
  // Re-check updates when opening Settings (and whenever nav changes if not yet available)
@@ -741,6 +807,9 @@ function render() {
  case "history":
  content = viewHistory();
  break;
+ case "reports":
+ content = viewReports();
+ break;
  case "help":
  content = viewHelp();
  break;
@@ -772,6 +841,9 @@ function render() {
  break;
  case "history":
  bindHistory();
+ break;
+ case "reports":
+ bindReports();
  break;
  case "help":
  bindHelp();
@@ -1094,10 +1166,14 @@ function viewTransactions(): string {
          <input type="number" step="0.01" min="0.01" id="add-amt" required placeholder="20.00" />
        </div>
      </div>
+     <div class="field">
+       <label>Date</label>
+       <input type="date" id="add-date" required value="${todayIso()}" />
+     </div>
      <button class="btn btn-primary" type="submit" ${addLineId ? "" : "disabled"}>Submit</button>
    </form>
    <p class="dim mt-1">
-     Submit adds to this line’s total for the month (for example ${money(selectedLine?.actualAmount ?? 0)} plus the amount you enter). The same line stays selected so you can enter several purchases in a row.
+     Submit adds to this line’s total for the month (for example ${money(selectedLine?.actualAmount ?? 0)} plus the amount you enter). Each submit is a dated transaction (see Reports). The same line stays selected so you can enter several purchases in a row.
    </p>
  </div>`
     : `<div class="info-callout tx-add-panel">This month is closed. Reopen it from History to edit transactions.</div>`;
@@ -1197,9 +1273,11 @@ function bindTransactions() {
     e.preventDefault();
     const lineEl = app.querySelector("#add-line") as HTMLSelectElement | null;
     const amtEl = app.querySelector("#add-amt") as HTMLInputElement | null;
+    const dateEl = app.querySelector("#add-date") as HTMLInputElement | null;
     if (lineEl) state.addLineId = Number(lineEl.value);
     const lineId = state.addLineId ?? 0;
     const amt = parseFloat(amtEl?.value || "0") || 0;
+    const occurredOn = (dateEl?.value || todayIso()).trim();
     if (!lineId || amt <= 0) {
       toast("Enter a positive amount", true);
       return;
@@ -1209,7 +1287,9 @@ function bindTransactions() {
         state.year,
         state.month,
         lineId,
-        amt
+        amt,
+        null,
+        occurredOn
       );
       const lineName =
         state.dash?.lines.find((l) => l.budgetLineId === lineId)?.name ?? "Line";
@@ -1300,6 +1380,425 @@ async function syncOpenMonthFromPlan(quiet = false): Promise<void> {
   } catch {
     /* closed month or lock — ignore */
   }
+}
+
+async function loadReportsData(): Promise<void> {
+  state.reportLoading = true;
+  try {
+    const mode = state.reportMode;
+    let year: number | null = null;
+    let month: number | null = null;
+    let budgetLineId: number | null = null;
+    let fromDate: string | null = state.reportFrom || null;
+    let toDate: string | null = state.reportTo || null;
+
+    if (mode === "month") {
+      year = state.year;
+      month = state.month;
+      fromDate = null;
+      toDate = null;
+    } else if (mode === "line") {
+      budgetLineId = state.reportLineId;
+      // keep date range for line mode if set
+    } else {
+      // all — date range only
+      year = null;
+      month = null;
+    }
+
+    state.reportTxs = await api.listLineTransactions({
+      year,
+      month,
+      budgetLineId,
+      fromDate,
+      toDate,
+      categoryId: null,
+    });
+
+    // Prior month for comparison report
+    let py = state.year;
+    let pm = state.month - 1;
+    if (pm < 1) {
+      pm = 12;
+      py -= 1;
+    }
+    try {
+      state.reportCompareDash = await api.getDashboard(py, pm);
+    } catch {
+      state.reportCompareDash = null;
+    }
+  } catch (e) {
+    state.reportTxs = [];
+    toast(String(e), true);
+  } finally {
+    state.reportLoading = false;
+    if (state.view === "reports") render();
+  }
+}
+
+function sortedReportTxs(): LineTransaction[] {
+  const rows = [...state.reportTxs];
+  const dir = state.reportSortDir;
+  rows.sort((a, b) => {
+    switch (state.reportSortKey) {
+      case "date":
+        return cmpStr(a.occurredOn, b.occurredOn, dir) || cmpNum(a.id, b.id, dir);
+      case "name":
+        return cmpStr(a.lineName, b.lineName, dir) || cmpStr(a.occurredOn, b.occurredOn, dir);
+      case "category":
+        return (
+          cmpStr(a.categoryName, b.categoryName, dir) ||
+          cmpStr(a.lineName, b.lineName, dir)
+        );
+      case "type":
+        return (
+          cmpStr(a.isFixed ? "Fixed" : "Flexible", b.isFixed ? "Fixed" : "Flexible", dir) ||
+          cmpStr(a.lineName, b.lineName, dir)
+        );
+      case "amount":
+        return cmpNum(a.amount, b.amount, dir);
+      case "month": {
+        const am = a.year * 100 + a.month;
+        const bm = b.year * 100 + b.month;
+        return cmpNum(am, bm, dir) || cmpStr(a.occurredOn, b.occurredOn, dir);
+      }
+      default:
+        return 0;
+    }
+  });
+  return rows;
+}
+
+function toggleReportSort(key: ReportSortKey) {
+  if (state.reportSortKey === key) {
+    state.reportSortDir = state.reportSortDir === "asc" ? "desc" : "asc";
+  } else {
+    state.reportSortKey = key;
+    state.reportSortDir = key === "date" || key === "amount" ? "desc" : "asc";
+  }
+  render();
+}
+
+function viewReports(): string {
+  const mode = state.reportMode;
+  const kind = state.reportKind;
+  const txs = sortedReportTxs();
+  const total = txs.reduce((s, t) => s + t.amount, 0);
+  const lineOpts = state.lines
+    .map(
+      (l) =>
+        `<option value="${l.id}" ${state.reportLineId === l.id ? "selected" : ""}>${esc(l.name)} · ${esc(l.categoryName)}</option>`
+    )
+    .join("");
+
+  const modeChips = (
+    [
+      ["month", "Current month"],
+      ["all", "All transactions"],
+      ["line", "By budget line"],
+    ] as const
+  )
+    .map(
+      ([id, label]) =>
+        `<button type="button" class="chip ${mode === id ? "active" : ""}" data-report-mode="${id}">${label}</button>`
+    )
+    .join("");
+
+  const kindChips = (
+    [
+      ["ledger", "Transaction list"],
+      ["category", "By category"],
+      ["daily", "Daily spend"],
+      ["fixed_flex", "Fixed vs flexible"],
+      ["over_budget", "Over budget"],
+      ["compare", "Month comparison"],
+    ] as const
+  )
+    .map(
+      ([id, label]) =>
+        `<button type="button" class="chip ${kind === id ? "active" : ""}" data-report-kind="${id}">${label}</button>`
+    )
+    .join("");
+
+  let body = "";
+  if (state.reportLoading) {
+    body = `<div class="empty">Loading report…</div>`;
+  } else if (kind === "ledger") {
+    const rows = txs
+      .map(
+        (t) => `
+ <tr>
+   <td class="mono">${esc(t.occurredOn)}</td>
+   <td><strong>${esc(t.lineName)}</strong></td>
+   <td><span class="badge badge-cat" style="border-left:3px solid ${t.categoryColor}">${esc(t.categoryName)}</span></td>
+   <td>${t.isFixed ? "Fixed" : "Flexible"}</td>
+   <td class="mono">${money(t.amount)}</td>
+   <td class="mono">${t.year}-${String(t.month).padStart(2, "0")}</td>
+   <td class="dim">${esc(t.notes || (t.source === "adjustment" ? "Adjustment" : ""))}</td>
+ </tr>`
+      )
+      .join("");
+    body = `
+ <div class="table-wrap" id="report-print-table">
+   <table class="data">
+     <thead><tr>
+       <th class="th-sort" data-report-sort="date">Date ${sortIndicator(state.reportSortKey, "date", state.reportSortDir)}</th>
+       <th class="th-sort" data-report-sort="name">Name ${sortIndicator(state.reportSortKey, "name", state.reportSortDir)}</th>
+       <th class="th-sort" data-report-sort="category">Category ${sortIndicator(state.reportSortKey, "category", state.reportSortDir)}</th>
+       <th class="th-sort" data-report-sort="type">Type ${sortIndicator(state.reportSortKey, "type", state.reportSortDir)}</th>
+       <th class="th-sort" data-report-sort="amount">Amount ${sortIndicator(state.reportSortKey, "amount", state.reportSortDir)}</th>
+       <th class="th-sort" data-report-sort="month">Month ${sortIndicator(state.reportSortKey, "month", state.reportSortDir)}</th>
+       <th>Notes</th>
+     </tr></thead>
+     <tbody>${rows || `<tr><td colspan="7" class="empty">No dated transactions yet. Log spending on Transactions (with a date).</td></tr>`}</tbody>
+     <tfoot><tr>
+       <td colspan="4"><strong>Total</strong> (${txs.length} transaction${txs.length === 1 ? "" : "s"})</td>
+       <td class="mono"><strong>${money(total)}</strong></td>
+       <td colspan="2"></td>
+     </tr></tfoot>
+   </table>
+ </div>`;
+  } else if (kind === "category") {
+    const map = new Map<string, { amount: number; color: string; n: number }>();
+    for (const t of txs) {
+      const cur = map.get(t.categoryName) || {
+        amount: 0,
+        color: t.categoryColor,
+        n: 0,
+      };
+      cur.amount += t.amount;
+      cur.n += 1;
+      map.set(t.categoryName, cur);
+    }
+    const entries = [...map.entries()].sort((a, b) => b[1].amount - a[1].amount);
+    const rows = entries
+      .map(
+        ([name, v]) => `
+ <tr>
+   <td><span class="badge badge-cat" style="border-left:3px solid ${v.color}">${esc(name)}</span></td>
+   <td class="mono">${v.n}</td>
+   <td class="mono">${money(v.amount)}</td>
+   <td class="mono">${total > 0 ? ((v.amount / total) * 100).toFixed(0) : 0}%</td>
+ </tr>`
+      )
+      .join("");
+    body = `
+ <div class="table-wrap" id="report-print-table">
+   <table class="data">
+     <thead><tr><th>Category</th><th>Count</th><th>Total</th><th>Share</th></tr></thead>
+     <tbody>${rows || `<tr><td colspan="4" class="empty">No data in this selection.</td></tr>`}</tbody>
+     <tfoot><tr><td><strong>All</strong></td><td class="mono">${txs.length}</td><td class="mono"><strong>${money(total)}</strong></td><td></td></tr></tfoot>
+   </table>
+ </div>`;
+  } else if (kind === "daily") {
+    const map = new Map<string, number>();
+    for (const t of txs) {
+      map.set(t.occurredOn, (map.get(t.occurredOn) || 0) + t.amount);
+    }
+    const entries = [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+    const rows = entries
+      .map(
+        ([day, amt]) => `
+ <tr><td class="mono">${esc(day)}</td><td class="mono">${money(amt)}</td></tr>`
+      )
+      .join("");
+    body = `
+ <div class="table-wrap" id="report-print-table">
+   <table class="data">
+     <thead><tr><th>Date</th><th>Total spent</th></tr></thead>
+     <tbody>${rows || `<tr><td colspan="2" class="empty">No data in this selection.</td></tr>`}</tbody>
+     <tfoot><tr><td><strong>All days</strong></td><td class="mono"><strong>${money(total)}</strong></td></tr></tfoot>
+   </table>
+ </div>`;
+  } else if (kind === "fixed_flex") {
+    let fixed = 0;
+    let flex = 0;
+    let nFixed = 0;
+    let nFlex = 0;
+    for (const t of txs) {
+      if (t.isFixed) {
+        fixed += t.amount;
+        nFixed += 1;
+      } else {
+        flex += t.amount;
+        nFlex += 1;
+      }
+    }
+    body = `
+ <div class="table-wrap" id="report-print-table">
+   <table class="data">
+     <thead><tr><th>Type</th><th>Transactions</th><th>Total</th><th>Share</th></tr></thead>
+     <tbody>
+       <tr><td>Fixed</td><td class="mono">${nFixed}</td><td class="mono">${money(fixed)}</td><td class="mono">${total > 0 ? ((fixed / total) * 100).toFixed(0) : 0}%</td></tr>
+       <tr><td>Flexible</td><td class="mono">${nFlex}</td><td class="mono">${money(flex)}</td><td class="mono">${total > 0 ? ((flex / total) * 100).toFixed(0) : 0}%</td></tr>
+     </tbody>
+     <tfoot><tr><td><strong>All</strong></td><td class="mono">${txs.length}</td><td class="mono"><strong>${money(total)}</strong></td><td></td></tr></tfoot>
+   </table>
+ </div>`;
+  } else if (kind === "over_budget") {
+    const d = state.dash;
+    const over = (d?.lines || []).filter((l) => l.status === "over");
+    const rows = over
+      .map(
+        (l) => `
+ <tr>
+   <td><strong>${esc(l.name)}</strong></td>
+   <td>${esc(l.categoryName)}</td>
+   <td class="mono">${money(l.budgetAmount)}</td>
+   <td class="mono">${money(l.actualAmount ?? 0)}</td>
+   <td class="mono">${money((l.actualAmount ?? 0) - l.budgetAmount)}</td>
+ </tr>`
+      )
+      .join("");
+    body = `
+ <p class="dim">Over-budget lines for <strong>${monthName(state.month)} ${state.year}</strong> (uses month line totals — same math as Dashboard).</p>
+ <div class="table-wrap" id="report-print-table">
+   <table class="data">
+     <thead><tr><th>Line</th><th>Category</th><th>Budget</th><th>Actual</th><th>Over by</th></tr></thead>
+     <tbody>${rows || `<tr><td colspan="5" class="empty">No over-budget lines this month.</td></tr>`}</tbody>
+   </table>
+ </div>`;
+  } else {
+    // compare
+    const cur = state.dash;
+    const prev = state.reportCompareDash;
+    let py = state.year;
+    let pm = state.month - 1;
+    if (pm < 1) {
+      pm = 12;
+      py -= 1;
+    }
+    const curActual = cur?.actualTotal ?? 0;
+    const prevActual = prev?.actualTotal ?? 0;
+    const curBudget = cur?.budgetedTotal ?? 0;
+    const prevBudget = prev?.budgetedTotal ?? 0;
+    const delta = curActual - prevActual;
+    body = `
+ <div class="table-wrap" id="report-print-table">
+   <table class="data">
+     <thead><tr><th></th><th>${monthName(pm)} ${py}</th><th>${monthName(state.month)} ${state.year}</th><th>Change</th></tr></thead>
+     <tbody>
+       <tr><td>Budgeted</td><td class="mono">${money(prevBudget)}</td><td class="mono">${money(curBudget)}</td><td class="mono">${money(curBudget - prevBudget)}</td></tr>
+       <tr><td>Actual spent</td><td class="mono">${money(prevActual)}</td><td class="mono">${money(curActual)}</td><td class="mono">${money(delta)}</td></tr>
+       <tr><td>Savings rate</td><td class="mono">${prev?.savingsRate != null ? prev.savingsRate.toFixed(1) + "%" : "—"}</td><td class="mono">${cur?.savingsRate != null ? cur.savingsRate.toFixed(1) + "%" : "—"}</td><td></td></tr>
+     </tbody>
+   </table>
+ </div>
+ <p class="dim mt-1">Actuals match Dashboard math for each month. Dated list filters do not change this comparison.</p>`;
+  }
+
+  const titleBits = [
+    kind === "ledger"
+      ? "Transaction list"
+      : kind === "category"
+        ? "By category"
+        : kind === "daily"
+          ? "Daily spend"
+          : kind === "fixed_flex"
+            ? "Fixed vs flexible"
+            : kind === "over_budget"
+              ? "Over budget"
+              : "Month comparison",
+    mode === "month"
+      ? `${monthName(state.month)} ${state.year}`
+      : mode === "line"
+        ? "Selected line"
+        : "All",
+  ];
+
+  return `
+ <div class="reports-page" id="report-root">
+   <div class="page-header">
+     <div>
+       <h2>Reports</h2>
+       <div class="sub">Dated transactions and summaries · maths match Dashboard totals</div>
+     </div>
+     <div class="flex-gap no-print">
+       <button type="button" class="btn btn-primary" id="report-print">Print</button>
+     </div>
+   </div>
+
+   <div class="card card-pad no-print mb-1">
+     <div class="section-title">Scope</div>
+     <div class="filters mb-1">${modeChips}</div>
+     ${
+       mode === "line"
+         ? `<div class="field" style="max-width:22rem"><label>Budget line</label>
+            <select id="report-line"><option value="">Select a line…</option>${lineOpts}</select></div>`
+         : ""
+     }
+     ${
+       mode === "all" || mode === "line"
+         ? `<div class="form-row mt-1">
+             <div class="field"><label>From</label><input type="date" id="report-from" value="${esc(state.reportFrom)}" /></div>
+             <div class="field"><label>To</label><input type="date" id="report-to" value="${esc(state.reportTo)}" /></div>
+             <button type="button" class="btn btn-ghost" id="report-apply-dates">Apply dates</button>
+           </div>`
+         : `<p class="dim">Using the app month: <strong>${monthName(state.month)} ${state.year}</strong> (change it from Dashboard / Transactions month controls, then reopen Reports).</p>`
+     }
+   </div>
+
+   <div class="card card-pad no-print mb-1">
+     <div class="section-title">Report type</div>
+     <div class="filters">${kindChips}</div>
+   </div>
+
+   <div class="card report-print-area">
+     <div class="card-pad">
+       <div class="section-title report-print-title">${esc(titleBits.join(" · "))}</div>
+       <p class="dim report-print-meta">Budget Master 9000 · printed ${esc(todayIso())}${
+         kind === "ledger" || kind === "category" || kind === "daily" || kind === "fixed_flex"
+           ? ` · ${txs.length} tx · ${money(total)}`
+           : ""
+       }</p>
+       ${body}
+     </div>
+   </div>
+ </div>`;
+}
+
+function bindReports() {
+  app.querySelectorAll<HTMLButtonElement>("[data-report-mode]").forEach((b) => {
+    b.addEventListener("click", () => {
+      state.reportMode = b.dataset.reportMode as ReportMode;
+      if (state.reportMode === "month") {
+        state.reportFrom = monthStartIso(state.year, state.month);
+        state.reportTo = monthEndIso(state.year, state.month);
+      }
+      if (state.reportMode === "line" && state.reportLineId == null && state.lines[0]) {
+        state.reportLineId = state.lines[0].id;
+      }
+      void loadReportsData();
+      render();
+    });
+  });
+  app.querySelectorAll<HTMLButtonElement>("[data-report-kind]").forEach((b) => {
+    b.addEventListener("click", () => {
+      state.reportKind = b.dataset.reportKind as ReportKind;
+      render();
+    });
+  });
+  app.querySelectorAll<HTMLElement>("[data-report-sort]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.reportSort as ReportSortKey;
+      if (key) toggleReportSort(key);
+    });
+  });
+  app.querySelector("#report-line")?.addEventListener("change", (e) => {
+    const v = Number((e.target as HTMLSelectElement).value);
+    state.reportLineId = v || null;
+    void loadReportsData();
+  });
+  app.querySelector("#report-apply-dates")?.addEventListener("click", () => {
+    state.reportFrom =
+      (app.querySelector("#report-from") as HTMLInputElement)?.value || "";
+    state.reportTo =
+      (app.querySelector("#report-to") as HTMLInputElement)?.value || "";
+    void loadReportsData();
+  });
+  app.querySelector("#report-print")?.addEventListener("click", () => {
+    window.print();
+  });
 }
 
 /** High-contrast pie palette (hues spaced so neighbors stay distinct). */
@@ -1882,8 +2381,8 @@ function viewPlan(): string {
  <td class="mono">${money(l.amount)}</td>
  <td class="mono">${money(l.monthlyAmount)}</td>
  <td class="flex-gap">
- <button class="btn btn-ghost btn-sm" data-edit="${l.id}">Edit</button>
- <button class="btn btn-danger btn-sm" data-del="${l.id}">Delete</button>
+ <button type="button" class="btn btn-ghost btn-sm" data-edit="${l.id}">Edit</button>
+ <button type="button" class="btn btn-danger btn-sm" data-del="${l.id}">Delete</button>
  </td>
  </tr>`
  )
@@ -2060,16 +2559,24 @@ function bindPlan() {
  state.editLine =
  state.lines.find((l) => l.id === Number(b.dataset.edit)) || null;
  render();
+ const form = app.querySelector("#line-form");
+ form?.scrollIntoView({ behavior: "smooth", block: "start" });
+ app.querySelector<HTMLInputElement>("#line-name")?.focus();
  });
  });
  app.querySelectorAll<HTMLButtonElement>("[data-del]").forEach((b) => {
  b.addEventListener("click", async () => {
- if (!confirm("Delete this budget line?")) return;
+ if (
+  !confirm(
+   "Delete this budget line from your Plan? It will also be removed from the open month."
+  )
+ )
+  return;
  try {
  await api.deleteBudgetLine(Number(b.dataset.del));
  await refreshAll();
  await syncOpenMonthFromPlan();
- toast("Deleted — open month synced from Plan");
+ toast("Deleted from Plan — open month updated");
  render();
  } catch (e) {
  toast(String(e), true);
@@ -2330,7 +2837,8 @@ function viewSettings(): string {
       <p><strong>Budget Master 9000 v${esc(state.appVersion)}</strong> — freeware, offline, private.</p>
       <ul class="tips-list" style="margin-top:0.5rem">
         <li><strong>Dashboard</strong> — month command center (KPIs, charts, pace, attention).</li>
-        <li><strong>Transactions</strong> — log spending anytime; submit amounts to Plan lines; edit/delete.</li>
+        <li><strong>Transactions</strong> — log spending with dates; totals stay exact.</li>
+        <li><strong>Reports</strong> — dated lists, summaries, print.</li>
         <li><strong>Close-Month</strong> — verify numbers when ready, then close with a grade.</li>
         <li><strong>Plan</strong> — recurring template; open months sync automatically when you change it.</li>
       </ul>
@@ -2338,7 +2846,7 @@ function viewSettings(): string {
       ${
         state.update?.updateAvailable
           ? `<p class="mt-1"><button type="button" class="btn btn-primary btn-sm" id="settings-download-update">Download update v${esc(state.update.latestVersion)}</button></p>`
-          : `<p class="dim mt-1">Version is also shown in the left menu. Optional update checks use GitHub when online.</p>`
+          : `<p class="dim mt-1">Version is also shown in the left menu. When online, the app checks for a newer release and shows a notice automatically if one exists.</p>`
       }
     </div>`;
 }

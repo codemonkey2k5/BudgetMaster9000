@@ -231,3 +231,23 @@ pub struct UpdateCheck {
     pub checked: bool,
     pub error: Option<String>,
 }
+
+/// One dated spend (or adjustment) event on a month budget line.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LineTransaction {
+    pub id: i64,
+    pub year: i32,
+    pub month: i32,
+    pub budget_line_id: i64,
+    pub line_name: String,
+    pub category_id: i64,
+    pub category_name: String,
+    pub category_color: String,
+    pub is_fixed: bool,
+    pub amount: f64,
+    pub occurred_on: String,
+    pub notes: String,
+    pub source: String,
+    pub created_at: String,
+}

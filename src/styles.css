@@ -1060,3 +1060,51 @@ table.data tr:hover td {
     grid-template-columns: 1fr;
   }
 }
+
+/* Reports */
+.reports-page .mb-1 {
+  margin-bottom: 0.75rem;
+}
+.reports-page tfoot td {
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+
+/* Print: only the selected report */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  #report-root,
+  #report-root * {
+    visibility: visible !important;
+  }
+  #report-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    color: #000 !important;
+    background: #fff !important;
+  }
+  .no-print,
+  .sidebar,
+  .toast,
+  .notice-bar {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  .report-print-area,
+  .report-print-area * {
+    visibility: visible !important;
+  }
+  .report-print-area {
+    box-shadow: none !important;
+    border: none !important;
+  }
+  table.data th,
+  table.data td {
+    color: #000 !important;
+    border-color: #ccc !important;
+  }
+}

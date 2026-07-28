@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.0
+
+### Fixes
+- **Plan delete:** removing a Plan line now also removes it from the open month (Dashboard / Transactions) after sync. Previously the Plan list updated but the live month kept the stale line.
+- **Plan edit:** Edit focuses the form at the top of the page so changes are obvious.
+
+### Features
+- **Dated transactions:** each Submit on Transactions stores a date (default today). Line totals stay correct: actual = sum of dated events (absolute Edit replaces events so math never diverges).
+- **Reports tab:** dated transaction list with scopes (current month / all / by budget line), column sort, and print.
+- **Extra reports:** by category, daily spend, fixed vs flexible, over-budget lines, month comparison.
+- Schema migrates to v5 on first open (`line_transactions` event log). Dashboard / Close-Month / History math unchanged and stay consistent with line totals.
+
 ## 1.2.0
 
 ### Fixes

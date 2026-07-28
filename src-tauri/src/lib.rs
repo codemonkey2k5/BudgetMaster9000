@@ -263,10 +263,44 @@ fn add_to_actual(
     budget_line_id: i64,
     amount: f64,
     notes: Option<String>,
+    occurred_on: Option<String>,
 ) -> Result<f64, String> {
     require_unlocked(&state)?;
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
-    db::add_to_actual(&conn, year, month, budget_line_id, amount, notes).map_err(map_err)
+    db::add_to_actual(
+        &conn,
+        year,
+        month,
+        budget_line_id,
+        amount,
+        notes,
+        occurred_on,
+    )
+    .map_err(map_err)
+}
+
+#[tauri::command]
+fn list_line_transactions(
+    state: State<DbState>,
+    year: Option<i32>,
+    month: Option<i32>,
+    budget_line_id: Option<i64>,
+    from_date: Option<String>,
+    to_date: Option<String>,
+    category_id: Option<i64>,
+) -> Result<Vec<LineTransaction>, String> {
+    require_unlocked(&state)?;
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    db::list_line_transactions(
+        &conn,
+        year,
+        month,
+        budget_line_id,
+        from_date,
+        to_date,
+        category_id,
+    )
+    .map_err(map_err)
 }
 
 #[tauri::command]
@@ -407,12 +441,12 @@ pub fn run_self_test() -> Result<String, String> {
         .iter()
         .find(|l| l.name == "SelfTest Snack")
         .ok_or("snack line missing")?;
-    let t1 = add_to_actual(&conn, y, m, snack.budget_line_id, 20.0, None)
+    let t1 = add_to_actual(&conn, y, m, snack.budget_line_id, 20.0, None, None)
         .map_err(|e| e.to_string())?;
     if (t1 - 20.0).abs() > 0.01 {
         return Err(format!("add_to_actual expected 20, got {t1}"));
     }
-    let t2 = add_to_actual(&conn, y, m, snack.budget_line_id, 5.0, None)
+    let t2 = add_to_actual(&conn, y, m, snack.budget_line_id, 5.0, None, None)
         .map_err(|e| e.to_string())?;
     if (t2 - 25.0).abs() > 0.01 {
         return Err(format!("add_to_actual expected 25, got {t2}"));
@@ -476,6 +510,7 @@ pub fn run_self_test() -> Result<String, String> {
         "import_legacy_json",
         "export_json",
         "add_to_actual",
+        "list_line_transactions",
         "delete_month_line",
         "resync_month",
         "check_for_update",
@@ -541,6 +576,7 @@ pub fn run() {
             reopen_month,
             resync_month,
             add_to_actual,
+            list_line_transactions,
             delete_month_line,
             import_legacy_json,
             export_json,
@@ -569,6 +605,7 @@ pub fn run() {
                         | "checkin"
                         | "plan"
                         | "history"
+                        | "reports"
                         | "settings"
                         | "help"
                 ) {

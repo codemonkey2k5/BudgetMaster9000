@@ -176,6 +176,19 @@ fn migrate(conn: &Connection) -> Result<(), DbError> {
             payload_json TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS line_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            month_id INTEGER NOT NULL REFERENCES months(id) ON DELETE CASCADE,
+            month_line_id INTEGER NOT NULL REFERENCES month_lines(id) ON DELETE CASCADE,
+            amount REAL NOT NULL,
+            occurred_on TEXT NOT NULL,
+            notes TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL DEFAULT 'user',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_line_tx_month ON line_transactions(month_id, occurred_on);
+        CREATE INDEX IF NOT EXISTS idx_line_tx_line ON line_transactions(month_line_id);
         "#,
     )?;
 
@@ -189,7 +202,7 @@ fn migrate(conn: &Connection) -> Result<(), DbError> {
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM settings", [], |r| r.get(0))?;
     if count == 0 {
         set_setting(conn, "theme", "dark")?;
-        set_setting(conn, "schema_version", "4")?;
+        set_setting(conn, "schema_version", "5")?;
         set_setting(
             conn,
             "income",
@@ -212,6 +225,11 @@ fn migrate(conn: &Connection) -> Result<(), DbError> {
             // Fix duplicate month_lines created by name/category-based resync.
             dedupe_all_month_lines(conn)?;
             set_setting(conn, "schema_version", "4")?;
+        }
+        let ver = get_setting(conn, "schema_version")?.unwrap_or_else(|| "4".into());
+        if ver == "4" {
+            // Dated event log for Reports (table created via CREATE IF NOT EXISTS above).
+            set_setting(conn, "schema_version", "5")?;
         }
     }
     Ok(())
@@ -585,6 +603,7 @@ pub fn clear_all_data(conn: &Connection) -> Result<(), DbError> {
     conn.execute_batch(
         r#"
         DELETE FROM reviews;
+        DELETE FROM line_transactions;
         DELETE FROM month_actuals;
         DELETE FROM month_lines;
         DELETE FROM months;
@@ -698,7 +717,7 @@ fn snapshot_plan_into_month(conn: &Connection, month_id: i64) -> Result<(), DbEr
     dedupe_month_lines(conn, month_id)?;
 
     let lines = list_budget_lines(conn)?;
-    for line in lines {
+    for line in &lines {
         let color: String = conn.query_row(
             "SELECT color FROM categories WHERE id = ?1",
             params![line.category_id],
@@ -797,6 +816,33 @@ fn snapshot_plan_into_month(conn: &Connection, month_id: i64) -> Result<(), DbEr
             }
         }
     }
+
+    // Prune open-month lines whose Plan template was deleted (inactive).
+    // resync_open_month already rejects closed months; new months only have active plan.
+    let active_ids: std::collections::HashSet<i64> = lines.iter().map(|l| l.id).collect();
+    let mut all_ml = conn.prepare(
+        "SELECT id, budget_line_id FROM month_lines
+         WHERE month_id = ?1 AND budget_line_id IS NOT NULL AND budget_line_id != 0",
+    )?;
+    let pairs = all_ml
+        .query_map(params![month_id], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (ml_id, bl_id) in pairs {
+        if !active_ids.contains(&bl_id) {
+            conn.execute(
+                "DELETE FROM line_transactions WHERE month_line_id = ?1",
+                params![ml_id],
+            )?;
+            conn.execute(
+                "DELETE FROM month_actuals WHERE month_line_id = ?1",
+                params![ml_id],
+            )?;
+            conn.execute("DELETE FROM month_lines WHERE id = ?1", params![ml_id])?;
+        }
+    }
+
     apply_fixed_actuals(conn, month_id)?;
     Ok(())
 }
@@ -991,7 +1037,13 @@ pub fn save_actuals(
         ));
     }
 
+    let occurred_on = today_iso_date();
     for a in actuals {
+        if !a.actual_amount.is_finite() || a.actual_amount < 0.0 {
+            return Err(DbError::Message(
+                "Actual amount must be a non-negative number.".into(),
+            ));
+        }
         let month_line_id: Option<i64> = conn
             .query_row(
                 "SELECT id FROM month_lines WHERE month_id = ?1 AND budget_line_id = ?2",
@@ -1007,21 +1059,87 @@ pub fn save_actuals(
             continue;
         };
 
+        // Absolute set: replace ledger events so SUM always equals the new total.
         conn.execute(
-            "INSERT INTO month_actuals(month_id, month_line_id, actual_amount, notes)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(month_id, month_line_id) DO UPDATE SET
-               actual_amount = excluded.actual_amount,
-               notes = excluded.notes",
-            params![
-                month_id,
-                month_line_id,
-                a.actual_amount,
-                a.notes.clone().unwrap_or_default()
-            ],
+            "DELETE FROM line_transactions WHERE month_line_id = ?1",
+            params![month_line_id],
         )?;
+        let note = a.notes.clone().unwrap_or_default();
+        if a.actual_amount > 0.000_000_1 {
+            conn.execute(
+                "INSERT INTO line_transactions(month_id, month_line_id, amount, occurred_on, notes, source)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'adjustment')",
+                params![month_id, month_line_id, a.actual_amount, occurred_on, note],
+            )?;
+        }
+        set_line_actual(conn, month_id, month_line_id, a.actual_amount, &note)?;
     }
     Ok(())
+}
+
+fn today_iso_date() -> String {
+    Local::now().date_naive().format("%Y-%m-%d").to_string()
+}
+
+fn validate_iso_date(s: &str) -> Result<String, DbError> {
+    let s = s.trim();
+    if s.len() != 10 {
+        return Err(DbError::Message(
+            "Date must be YYYY-MM-DD.".into(),
+        ));
+    }
+    chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|_| {
+        DbError::Message("Date must be a valid calendar date (YYYY-MM-DD).".into())
+    })?;
+    Ok(s.to_string())
+}
+
+/// Set materialised actual for a month line. Math: callers must pass the true total.
+fn set_line_actual(
+    conn: &Connection,
+    month_id: i64,
+    month_line_id: i64,
+    amount: f64,
+    notes: &str,
+) -> Result<(), DbError> {
+    conn.execute(
+        "INSERT INTO month_actuals(month_id, month_line_id, actual_amount, notes)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(month_id, month_line_id) DO UPDATE SET
+           actual_amount = excluded.actual_amount,
+           notes = CASE
+             WHEN excluded.notes != '' THEN excluded.notes
+             ELSE month_actuals.notes
+           END",
+        params![month_id, month_line_id, amount, notes],
+    )?;
+    Ok(())
+}
+
+/// Recompute month_actuals from SUM(line_transactions). Source of truth for ledger lines.
+fn recompute_line_actual_from_events(
+    conn: &Connection,
+    month_id: i64,
+    month_line_id: i64,
+) -> Result<f64, DbError> {
+    let sum: f64 = conn.query_row(
+        "SELECT COALESCE(SUM(amount), 0) FROM line_transactions WHERE month_line_id = ?1",
+        params![month_line_id],
+        |r| r.get(0),
+    )?;
+    // Round to cents to avoid float drift in UI comparisons
+    let sum = (sum * 100.0).round() / 100.0;
+    set_line_actual(conn, month_id, month_line_id, sum, "")?;
+    Ok(sum)
+}
+
+fn event_count_for_line(conn: &Connection, month_line_id: i64) -> Result<i64, DbError> {
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM line_transactions WHERE month_line_id = ?1",
+        params![month_line_id],
+        |r| r.get(0),
+    )?;
+    Ok(n)
 }
 
 pub fn update_month_meta(
@@ -1272,6 +1390,7 @@ pub fn resync_open_month(conn: &Connection, year: i32, month: i32) -> Result<(),
 }
 
 /// Add `amount` to a month line's actual total (mid-month logging).
+/// Inserts a dated ledger event; materialised actual is always SUM(events).
 /// If no actual exists yet, starts from 0 + amount (not from plan budget).
 pub fn add_to_actual(
     conn: &Connection,
@@ -1280,12 +1399,17 @@ pub fn add_to_actual(
     budget_line_id: i64,
     amount: f64,
     notes: Option<String>,
+    occurred_on: Option<String>,
 ) -> Result<f64, DbError> {
     if !amount.is_finite() || amount <= 0.0 {
         return Err(DbError::Message(
             "Amount must be a positive number.".into(),
         ));
     }
+    let occurred_on = match occurred_on {
+        Some(s) if !s.trim().is_empty() => validate_iso_date(&s)?,
+        _ => today_iso_date(),
+    };
     let month_id = ensure_month(conn, year, month)?;
     let status: String = conn.query_row(
         "SELECT status FROM months WHERE id = ?1",
@@ -1321,28 +1445,36 @@ pub fn add_to_actual(
             DbError::Message("That budget line is not on this month. Update from Plan first.".into())
         })?;
 
-    let current: Option<f64> = conn
-        .query_row(
-            "SELECT actual_amount FROM month_actuals WHERE month_id = ?1 AND month_line_id = ?2",
-            params![month_id, month_line_id],
-            |r| r.get(0),
-        )
-        .optional()?;
-    let new_total = current.unwrap_or(0.0) + amount;
     let note = notes.unwrap_or_default();
 
+    // Legacy totals without events: seed so SUM(events) stays equal to actuals.
+    let n_events = event_count_for_line(conn, month_line_id)?;
+    if n_events == 0 {
+        let current: Option<f64> = conn
+            .query_row(
+                "SELECT actual_amount FROM month_actuals WHERE month_id = ?1 AND month_line_id = ?2",
+                params![month_id, month_line_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(cur) = current {
+            if cur > 0.000_000_1 {
+                conn.execute(
+                    "INSERT INTO line_transactions(month_id, month_line_id, amount, occurred_on, notes, source)
+                     VALUES (?1, ?2, ?3, ?4, '', 'adjustment')",
+                    params![month_id, month_line_id, cur, occurred_on],
+                )?;
+            }
+        }
+    }
+
     conn.execute(
-        "INSERT INTO month_actuals(month_id, month_line_id, actual_amount, notes)
-         VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT(month_id, month_line_id) DO UPDATE SET
-           actual_amount = excluded.actual_amount,
-           notes = CASE
-             WHEN excluded.notes != '' THEN excluded.notes
-             ELSE month_actuals.notes
-           END",
-        params![month_id, month_line_id, new_total, note],
+        "INSERT INTO line_transactions(month_id, month_line_id, amount, occurred_on, notes, source)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'user')",
+        params![month_id, month_line_id, amount, occurred_on, note],
     )?;
-    Ok(new_total)
+
+    recompute_line_actual_from_events(conn, month_id, month_line_id)
 }
 
 /// Remove a line from an open month snapshot only (does not delete the Plan template).
@@ -1375,11 +1507,96 @@ pub fn delete_month_line(
         return Err(DbError::Message("Line not found on this month.".into()));
     };
     conn.execute(
+        "DELETE FROM line_transactions WHERE month_line_id = ?1",
+        params![ml_id],
+    )?;
+    conn.execute(
         "DELETE FROM month_actuals WHERE month_line_id = ?1",
         params![ml_id],
     )?;
     conn.execute("DELETE FROM month_lines WHERE id = ?1", params![ml_id])?;
     Ok(())
+}
+
+/// List dated ledger transactions for Reports (filters are optional / additive).
+pub fn list_line_transactions(
+    conn: &Connection,
+    year: Option<i32>,
+    month: Option<i32>,
+    budget_line_id: Option<i64>,
+    from_date: Option<String>,
+    to_date: Option<String>,
+    category_id: Option<i64>,
+) -> Result<Vec<LineTransaction>, DbError> {
+    let from_date = match from_date {
+        Some(s) if !s.trim().is_empty() => Some(validate_iso_date(&s)?),
+        _ => None,
+    };
+    let to_date = match to_date {
+        Some(s) if !s.trim().is_empty() => Some(validate_iso_date(&s)?),
+        _ => None,
+    };
+
+    let mut sql = String::from(
+        "SELECT t.id, m.year, m.month, COALESCE(ml.budget_line_id, 0), ml.name, ml.category_id,
+                ml.category_name, ml.category_color, ml.is_fixed, t.amount, t.occurred_on,
+                t.notes, t.source, t.created_at
+         FROM line_transactions t
+         JOIN month_lines ml ON ml.id = t.month_line_id
+         JOIN months m ON m.id = t.month_id
+         WHERE 1=1",
+    );
+    let mut params_dyn: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(y) = year {
+        sql.push_str(" AND m.year = ?");
+        params_dyn.push(Box::new(y));
+    }
+    if let Some(mo) = month {
+        sql.push_str(" AND m.month = ?");
+        params_dyn.push(Box::new(mo));
+    }
+    if let Some(bl) = budget_line_id {
+        sql.push_str(" AND ml.budget_line_id = ?");
+        params_dyn.push(Box::new(bl));
+    }
+    if let Some(ref fd) = from_date {
+        sql.push_str(" AND t.occurred_on >= ?");
+        params_dyn.push(Box::new(fd.clone()));
+    }
+    if let Some(ref td) = to_date {
+        sql.push_str(" AND t.occurred_on <= ?");
+        params_dyn.push(Box::new(td.clone()));
+    }
+    if let Some(cid) = category_id {
+        sql.push_str(" AND ml.category_id = ?");
+        params_dyn.push(Box::new(cid));
+    }
+    sql.push_str(" ORDER BY t.occurred_on DESC, t.id DESC");
+
+    let mut stmt = conn.prepare(&sql)?;
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params_dyn.iter().map(|p| p.as_ref()).collect();
+    let rows = stmt
+        .query_map(param_refs.as_slice(), |r| {
+            Ok(LineTransaction {
+                id: r.get(0)?,
+                year: r.get(1)?,
+                month: r.get(2)?,
+                budget_line_id: r.get(3)?,
+                line_name: r.get(4)?,
+                category_id: r.get(5)?,
+                category_name: r.get(6)?,
+                category_color: r.get(7)?,
+                is_fixed: r.get::<_, i64>(8)? == 1,
+                amount: r.get(9)?,
+                occurred_on: r.get(10)?,
+                notes: r.get(11)?,
+                source: r.get(12)?,
+                created_at: r.get(13)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
 }
 
 pub fn import_legacy(conn: &Connection, data: &LegacyImport) -> Result<String, DbError> {
@@ -1895,7 +2112,7 @@ mod tests {
             .expect("groceries line");
 
         // Mid-month actual on original name
-        add_to_actual(&conn, y, m, groceries.id, 50.0, None).unwrap();
+        add_to_actual(&conn, y, m, groceries.id, 50.0, None, None).unwrap();
 
         upsert_budget_line(
             &conn,
@@ -1982,16 +2199,16 @@ mod tests {
             .find(|l| l.name.contains("Dining"))
             .expect("dining");
 
-        let t1 = add_to_actual(&conn, y, m, line.id, 20.0, None).unwrap();
+        let t1 = add_to_actual(&conn, y, m, line.id, 20.0, None, None).unwrap();
         assert!((t1 - 20.0).abs() < 0.01);
-        let t2 = add_to_actual(&conn, y, m, line.id, 20.0, None).unwrap();
+        let t2 = add_to_actual(&conn, y, m, line.id, 20.0, None, None).unwrap();
         assert!((t2 - 40.0).abs() < 0.01);
-        let t3 = add_to_actual(&conn, y, m, line.id, 60.0, None).unwrap();
+        let t3 = add_to_actual(&conn, y, m, line.id, 60.0, None, None).unwrap();
         assert!((t3 - 100.0).abs() < 0.01);
 
         // Five more $20 → 200
         for _ in 0..5 {
-            add_to_actual(&conn, y, m, line.id, 20.0, None).unwrap();
+            add_to_actual(&conn, y, m, line.id, 20.0, None, None).unwrap();
         }
         let dash = get_dashboard(&conn, y, m).unwrap();
         let row = dash
@@ -2001,8 +2218,8 @@ mod tests {
             .unwrap();
         assert!((row.actual_amount.unwrap() - 200.0).abs() < 0.01);
 
-        assert!(add_to_actual(&conn, y, m, line.id, 0.0, None).is_err());
-        assert!(add_to_actual(&conn, y, m, line.id, -5.0, None).is_err());
+        assert!(add_to_actual(&conn, y, m, line.id, 0.0, None, None).is_err());
+        assert!(add_to_actual(&conn, y, m, line.id, -5.0, None, None).is_err());
 
         drop(conn);
         let _ = std::fs::remove_file(path);
@@ -2027,6 +2244,130 @@ mod tests {
             .unwrap()
             .iter()
             .any(|l| l.id == line.id));
+        drop(conn);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn plan_delete_prunes_open_month() {
+        let (conn, path) = temp_db();
+        load_demo(&conn).unwrap();
+        let (y, m) = current_year_month();
+        let line = list_budget_lines(&conn)
+            .unwrap()
+            .into_iter()
+            .find(|l| l.name.contains("Dining"))
+            .expect("dining");
+        let id = line.id;
+        let _ = get_dashboard(&conn, y, m).unwrap();
+        assert!(get_dashboard(&conn, y, m)
+            .unwrap()
+            .lines
+            .iter()
+            .any(|l| l.budget_line_id == id));
+
+        delete_budget_line(&conn, id).unwrap();
+        assert!(!list_budget_lines(&conn).unwrap().iter().any(|l| l.id == id));
+
+        resync_open_month(&conn, y, m).unwrap();
+        let dash = get_dashboard(&conn, y, m).unwrap();
+        assert!(
+            !dash.lines.iter().any(|l| l.budget_line_id == id),
+            "deleted plan line must leave open month after resync"
+        );
+
+        drop(conn);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn dated_transactions_sum_equals_actual() {
+        let (conn, path) = temp_db();
+        load_demo(&conn).unwrap();
+        let (y, m) = current_year_month();
+        let line = list_budget_lines(&conn)
+            .unwrap()
+            .into_iter()
+            .find(|l| l.name.contains("Dining"))
+            .expect("dining");
+
+        let t1 = add_to_actual(
+            &conn,
+            y,
+            m,
+            line.id,
+            12.50,
+            None,
+            Some("2026-07-01".into()),
+        )
+        .unwrap();
+        assert!((t1 - 12.50).abs() < 0.01);
+        let t2 = add_to_actual(
+            &conn,
+            y,
+            m,
+            line.id,
+            7.50,
+            None,
+            Some("2026-07-15".into()),
+        )
+        .unwrap();
+        assert!((t2 - 20.0).abs() < 0.01);
+
+        let txs = list_line_transactions(
+            &conn,
+            Some(y),
+            Some(m),
+            Some(line.id),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(txs.len(), 2);
+        let sum: f64 = txs.iter().map(|t| t.amount).sum();
+        assert!((sum - 20.0).abs() < 0.01);
+
+        let dash = get_dashboard(&conn, y, m).unwrap();
+        let row = dash
+            .lines
+            .iter()
+            .find(|l| l.budget_line_id == line.id)
+            .unwrap();
+        assert!((row.actual_amount.unwrap() - sum).abs() < 0.01);
+
+        // Absolute set replaces events; actual still equals SUM
+        save_actuals(
+            &conn,
+            y,
+            m,
+            &[ActualInput {
+                budget_line_id: line.id,
+                actual_amount: 55.0,
+                notes: None,
+            }],
+        )
+        .unwrap();
+        let txs2 = list_line_transactions(
+            &conn,
+            Some(y),
+            Some(m),
+            Some(line.id),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let sum2: f64 = txs2.iter().map(|t| t.amount).sum();
+        assert!((sum2 - 55.0).abs() < 0.01);
+        let dash2 = get_dashboard(&conn, y, m).unwrap();
+        let row2 = dash2
+            .lines
+            .iter()
+            .find(|l| l.budget_line_id == line.id)
+            .unwrap();
+        assert!((row2.actual_amount.unwrap() - 55.0).abs() < 0.01);
+
         drop(conn);
         let _ = std::fs::remove_file(path);
     }
