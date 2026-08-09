@@ -25,32 +25,115 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
-      - name: Build Tauri
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Budget Master 9000 ${{ github.ref_name }}
-          releaseBody: |
-            Offline monthly budget app — private, local, freeware (MIT).
+      - name: Build (NSIS + MSI)
+        run: npm run release
 
-            ### Download (pick one)
+      - name: Stage unique release assets only
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $ver = $tag.TrimStart('v')
+          $out = "release-assets"
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
 
-            | File | New install | Upgrade |
-            |------|-------------|---------|
-            | **Installer** (setup `.exe` or `.msi`) | Run it. Open from Start menu. | Run the new setup. Budget data stays in AppData — no file copying. |
-            | **Portable** (`BudgetMaster9000.exe`) | Save anywhere, double-click. | Replace the old `.exe` in the **same folder**. `bm9000.db` stays put. |
+          $nsis = Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
+          $msi  = Get-ChildItem "src-tauri/target/release/bundle/msi/*.msi" | Select-Object -First 1
+          $exe  = "src-tauri/target/release/budget-master-9000.exe"
+          if (-not $nsis -or -not $msi -or -not (Test-Path $exe)) {
+            throw "Missing build outputs (nsis/msi/exe)"
+          }
 
-            No accounts. No cloud. No manual database moves.
-          releaseDraft: true
-          prerelease: false
-          args: --bundles nsis,msi
+          # Canonical names only — never upload Tauri default names (duplicates).
+          $setupName = "BudgetMaster9000-Setup-$ver-x64.exe"
+          $msiName  = "BudgetMaster9000-$ver-x64.msi"
+          $portName = "BudgetMaster9000.exe"
+          $zipName  = "BudgetMaster9000-$ver-Windows.zip"
 
-      - name: Attach portable single-file exe
+          Copy-Item $nsis.FullName (Join-Path $out $setupName) -Force
+          Copy-Item $msi.FullName  (Join-Path $out $msiName) -Force
+          Copy-Item $exe           (Join-Path $out $portName) -Force
+
+          $upgrade = @"
+          Budget Master 9000 - Upgrade instructions
+          ========================================
+
+          You are updating to $ver.
+
+          Pick ONE of the two distribution choices (same as a new install):
+
+          1) INSTALLER (recommended if you used the setup before)
+             - Run $setupName (or the .msi if present).
+             - Follow the prompts. Your budget data stays in AppData automatically.
+             - No database files to copy. No settings to edit.
+
+          2) PORTABLE
+             - Close Budget Master 9000 if it is running.
+             - Copy BudgetMaster9000.exe over the old one in the SAME folder.
+             - Leave bm9000.db (your data) where it is - do not move or rename it.
+             - Start the new BudgetMaster9000.exe.
+
+          After upgrade
+          -------------
+          - Open the app. Schema upgrades run automatically on first launch.
+          - Your Plan, months, and history should be unchanged.
+
+          If anything looks wrong, import a JSON backup from Settings (export first next time).
+
+          Download source: https://github.com/codemonkey2k5/BudgetMaster9000/releases
+          "@
+          # Keep UPGRADE.txt unindented for users
+          $upgrade = $upgrade -replace '(?m)^          ', ''
+          Set-Content (Join-Path $out "UPGRADE.txt") $upgrade -Encoding ascii
+
+          $zipBody = Join-Path $out "zipbody"
+          New-Item -ItemType Directory $zipBody -Force | Out-Null
+          Copy-Item (Join-Path $out $setupName) $zipBody
+          Copy-Item (Join-Path $out $msiName) $zipBody
+          Copy-Item (Join-Path $out $portName) $zipBody
+          Copy-Item (Join-Path $out "UPGRADE.txt") $zipBody
+          Compress-Archive -Path (Join-Path $zipBody '*') -DestinationPath (Join-Path $out $zipName) -Force
+          Remove-Item $zipBody -Recurse -Force
+          Remove-Item (Join-Path $out "UPGRADE.txt") -Force
+
+          $sums = @()
+          foreach ($name in @($zipName, $msiName, $setupName, $portName)) {
+            $h = (Get-FileHash (Join-Path $out $name) -Algorithm SHA256).Hash.ToLower()
+            $sums += "$h  $name"
+          }
+          $sums | Set-Content (Join-Path $out "SHA256SUMS.txt") -Encoding ascii
+
+          Get-ChildItem $out | Format-Table Name, Length
+
+      - name: Publish GitHub release (no duplicate assets)
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          Copy-Item "src-tauri/target/release/budget-master-9000.exe" "BudgetMaster9000.exe" -Force
-          gh release upload "${{ github.ref_name }}" "BudgetMaster9000.exe" --clobber
+          $tag = "${{ github.ref_name }}"
+          $ver = $tag.TrimStart('v')
+          $notes = @"
+          Offline monthly budget app — private, local, freeware (MIT).
+
+          ### Download (pick one)
+
+          | File | New install | Upgrade |
+          |------|-------------|---------|
+          | **Installer** (setup ``.exe`` or ``.msi``) | Run it. Open from Start menu. | Run the new setup. Budget data stays in AppData — no file copying. |
+          | **Portable** (``BudgetMaster9000.exe``) | Save anywhere, double-click. | Replace the old ``.exe`` in the **same folder**. ``bm9000.db`` stays put. |
+          | **Windows.zip** | Installer + portable + upgrade notes (also used by in-app update download). | Same as above. |
+
+          No accounts. No cloud. No manual database moves. Schema migrates automatically on first open.
+          "@
+          $notes = $notes -replace '(?m)^          ', ''
+
+          # Replace any existing release for this tag (e.g. manual partial publish)
+          gh release delete $tag --yes 2>$null
+          gh release create $tag `
+            --title "Budget Master 9000 v$ver" `
+            --notes $notes `
+            --latest `
+            "release-assets/BudgetMaster9000-Setup-$ver-x64.exe" `
+            "release-assets/BudgetMaster9000-$ver-x64.msi" `
+            "release-assets/BudgetMaster9000.exe" `
+            "release-assets/BudgetMaster9000-$ver-Windows.zip" `
+            "release-assets/SHA256SUMS.txt"
