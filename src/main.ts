@@ -156,7 +156,7 @@ const state: State = {
   showCategoryNotice: false,
   toast: null,
   toastError: false,
-  appVersion: "1.3.0",
+  appVersion: "1.3.2",
   update: null,
   txSortKey: "details",
   txSortDir: "asc",
@@ -873,12 +873,7 @@ function viewDashboard(): string {
   const dim = daysInMonth(state.year, state.month);
   const day = dayOfMonth(state.year, state.month);
   const monthFrac = dim > 0 ? day / dim : 1;
-  const expectedSpend = d.budgetedTotal * monthFrac;
-  const actualSpend = hasActuals ? d.actualTotal : 0;
-  const paceDelta = expectedSpend - actualSpend;
   const daysLeft = Math.max(dim - day, 0);
-  const dailyRunway =
-    daysLeft > 0 && remaining > 0 ? remaining / daysLeft : null;
 
   const fixedBudget = fixedLines(d.lines).reduce((s, l) => s + l.budgetAmount, 0);
   const flexBudget = vars.reduce((s, l) => s + l.budgetAmount, 0);
@@ -888,14 +883,24 @@ function viewDashboard(): string {
   );
   const flexActual = vars.reduce((s, l) => s + (l.actualAmount ?? 0), 0);
 
-  const over = d.lines
+  // Pace & runway: flexible spending only (fixed bills are excluded)
+  const hasFlexActuals = vars.some((l) => l.actualAmount != null);
+  const expectedSpend = flexBudget * monthFrac;
+  const actualSpend = hasFlexActuals ? flexActual : 0;
+  const paceDelta = expectedSpend - actualSpend;
+  const flexRemaining = flexBudget - (hasFlexActuals ? flexActual : 0);
+  const dailyRunway =
+    daysLeft > 0 && flexRemaining > 0 ? flexRemaining / daysLeft : null;
+
+  // Needs attention + On track: flexible lines only (fixed bills excluded)
+  const over = vars
     .filter((l) => l.status === "over")
     .sort(
       (a, b) =>
         (b.actualAmount ?? 0) - (b.budgetAmount) - ((a.actualAmount ?? 0) - a.budgetAmount)
     )
     .slice(0, 5);
-  const wins = d.lines
+  const wins = vars
     .filter((l) => l.status === "under" || l.status === "on_plan")
     .slice(0, 5);
 
@@ -956,7 +961,7 @@ function viewDashboard(): string {
      <div class="report-metric"><span>Actual spend</span><strong class="mono">${money(actualSpend)}</strong></div>
      <div class="report-metric"><span>Pace</span>
        <strong class="${paceDelta >= 0 ? "pos" : "neg"}">${
-         !hasActuals
+         !hasFlexActuals
            ? "Log spending to track pace"
            : paceDelta >= 0
              ? `${money(paceDelta)} under expected pace`
@@ -964,7 +969,7 @@ function viewDashboard(): string {
        }</strong>
      </div>
      <div class="report-metric"><span>Cash / day left</span>
-       <strong class="mono">${dailyRunway != null ? money(dailyRunway) : daysLeft === 0 ? "Month complete" : "—"}</strong>
+       <strong class="mono">${dailyRunway != null ? money(dailyRunway) : daysLeft === 0 ? "Month complete" : flexRemaining <= 0 && hasFlexActuals ? "Flexible budget used" : "—"}</strong>
      </div>
    </div>
    <div class="card card-pad report-panel">
@@ -988,7 +993,7 @@ function viewDashboard(): string {
                return `<li class="attn">${esc(l.name)}: <strong class="mono">${money(overAmt)}</strong> over plan</li>`;
              })
              .join("")}</ul>`
-         : `<p class="dim">${hasActuals ? "Nothing over budget — nice work." : "No overspends yet. Log spending on Transactions."}</p>`
+         : `<p class="dim">${hasFlexActuals ? "No flexible lines over budget — nice work." : "No overspends yet. Log spending on Transactions."}</p>`
      }
      <div class="section-title mt-2">On track</div>
      ${

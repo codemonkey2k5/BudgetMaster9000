@@ -35,8 +35,8 @@ export const HELP_SECTIONS: HelpSection[] = [
 <ul>
 <li><strong>Income, budgeted, actual, variance, and remaining cash</strong> summarize how the month is going.</li>
 <li><strong>Charts</strong> show spending by category and how income compares to budget and actual.</li>
-<li><strong>Pace and runway</strong> estimate whether you are ahead or behind a steady monthly pace, and how much cash per remaining day you have left.</li>
-<li><strong>Needs attention / on track</strong> highlight lines that are over or under plan.</li>
+<li><strong>Pace and runway</strong> track flexible spending only (fixed bills are excluded): whether you are ahead or behind a steady pace, and flexible budget left per remaining day.</li>
+<li><strong>Needs attention</strong> and <strong>On track</strong> list flexible lines only (over budget, or under/on plan). Fixed bills are excluded.</li>
 </ul>
 <p>To record spending, open <strong>Transactions</strong>. To finish the month, open <strong>Close-Month</strong>.</p>`,
   },

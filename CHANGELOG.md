@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.2
+
+1. Pace, runway, needs-attention, and on-track summaries cover flexible spending only (not fixed bills).
+
+## 1.3.1
+
+1. Pace and runway on the month overview cover flexible spending only.
+2. Over-budget callouts list flexible items only.
+
 ## 1.3.0
 
 ### Fixes

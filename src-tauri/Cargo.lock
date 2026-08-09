@@ -640,7 +640,7 @@ dependencies = [
 
 [[package]]
 name = "budget-master-9000"
-version = "1.3.0"
+version = "1.3.2"
 dependencies = [
  "argon2",
  "base64 0.22.1",

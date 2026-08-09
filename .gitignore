@@ -41,3 +41,7 @@ pnpm-debug.log*
 *.bak
 **/extracted-icon.png
 src-tauri/icons/_preview*
+
+# Local version drop folders (binaries; not committed)
+versions/
+
