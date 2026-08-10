@@ -25,15 +25,15 @@
     <Program_Release_Day>08</Program_Release_Day>
     <Program_Release_Year>2026</Program_Release_Year>
     <Program_Type>Freeware</Program_Type>
-    <Program_Category_Class>Network &amp; Internet::Remote Computing</Program_Category_Class>
-    <Program_OS_Support>WinOther</Program_OS_Support>
+    <Program_Category_Class>Business &amp; Finance::Personal Finance</Program_Category_Class>
+    <Program_OS_Support>Win10,Win11</Program_OS_Support>
   </Program_Info>
 
   <Web_Info>
     <Application_URLs>
       <Application_Info_URL>https://github.com/codemonkey2k5/BudgetMaster9000</Application_Info_URL>
-      <Application_Screenshot_URL>https://github.com/codemonkey2k5/BudgetMaster9000/blob/main/docs/screenshots/01-dashboard.png</Application_Screenshot_URL>
-      <Application_Icon_URL>https://github.com/codemonkey2k5/BudgetMaster9000/blob/main/docs/screenshots/icon.png</Application_Icon_URL>
+      <Application_Screenshot_URL>https://raw.githubusercontent.com/codemonkey2k5/BudgetMaster9000/main/docs/screenshots/01-dashboard.png</Application_Screenshot_URL>
+      <Application_Icon_URL>https://raw.githubusercontent.com/codemonkey2k5/BudgetMaster9000/main/docs/screenshots/icon.png</Application_Icon_URL>
     </Application_URLs>
     <Download_URLs>
       <Primary_Download_URL>https://github.com/codemonkey2k5/BudgetMaster9000/releases/download/v1.3.2/BudgetMaster9000-1.3.2-Windows.zip</Primary_Download_URL>
