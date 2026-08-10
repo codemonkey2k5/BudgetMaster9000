@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<XML_DIZ_INFO>
+  <MASTER_PAD_VERSION_INFO>
+    <MASTER_PAD_VERSION>4.0</MASTER_PAD_VERSION>
+    <MASTER_PAD_EDITOR>Vasilkoff PAD Make 1.0</MASTER_PAD_EDITOR>
+    <MASTER_PAD_EDITOR_URL>https://vasilkoff.com/pad-make</MASTER_PAD_EDITOR_URL>
+    <MASTER_PAD_INFO>Portable Application Description (PAD) is a structured XML format that describes software applications for easy submission to directories.</MASTER_PAD_INFO>
+    <CERTIFIED>N</CERTIFIED>
+    <CERTIFICATE_ID></CERTIFICATE_ID>
+    <CERTIFICATE_LICENSE></CERTIFICATE_LICENSE>
+  </MASTER_PAD_VERSION_INFO>
+
+  <Company_Info>
+    <Company_Name>CodeMonkey2k5</Company_Name>
+    <Company_WebSite_URL>https://github.com/codemonkey2k5/BudgetMaster9000</Company_WebSite_URL>
+    <Contact_Info>
+      <Contact_Email>codemonkey2k5@gmail.com</Contact_Email>
+    </Contact_Info>
+  </Company_Info>
+
+  <Program_Info>
+    <Program_Name>Budget Master 9000</Program_Name>
+    <Program_Version>1.3.2</Program_Version>
+    <Program_Release_Month>08</Program_Release_Month>
+    <Program_Release_Day>08</Program_Release_Day>
+    <Program_Release_Year>2026</Program_Release_Year>
+    <Program_Type>Freeware</Program_Type>
+    <Program_Category_Class>Network &amp; Internet::Remote Computing</Program_Category_Class>
+    <Program_OS_Support>WinOther</Program_OS_Support>
+  </Program_Info>
+
+  <Web_Info>
+    <Application_URLs>
+      <Application_Info_URL>https://github.com/codemonkey2k5/BudgetMaster9000</Application_Info_URL>
+      <Application_Screenshot_URL>https://github.com/codemonkey2k5/BudgetMaster9000/blob/main/docs/screenshots/01-dashboard.png</Application_Screenshot_URL>
+      <Application_Icon_URL>https://github.com/codemonkey2k5/BudgetMaster9000/blob/main/docs/screenshots/icon.png</Application_Icon_URL>
+    </Application_URLs>
+    <Download_URLs>
+      <Primary_Download_URL>https://github.com/codemonkey2k5/BudgetMaster9000/releases/download/v1.3.2/BudgetMaster9000-1.3.2-Windows.zip</Primary_Download_URL>
+    </Download_URLs>
+  </Web_Info>
+
+  <Program_Descriptions>
+    <English>
+      <Char_Desc_450>Your monthly budget, finally clear. See what you planned, what you actually spent, and the real trends in a simple Windows app you’ll actually use. Most budgeting tools are either too complicated or too disconnected from real life. You end up with plans that don’t match reality, or you stop using the tool altogether. Simple, easy to use, data stays on your machine, absolutely free, no ads.</Char_Desc_450>
+    </English>
+  </Program_Descriptions>
+</XML_DIZ_INFO>
